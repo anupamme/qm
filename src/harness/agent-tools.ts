@@ -736,7 +736,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
   );
   const sandboxSelector = (description: string) => Type.Optional(Type.String({ minLength: 1, description }));
   const FILE_SEND_GUIDANCE =
-    "Tools taking sandbox_id use the default when it is omitted. Send files with the surface `post` action's `files` if present, else `attach` (workspace paths or {file_id}); background jobs cannot deliver files. ";
+    "execute, files, skills and apps use the default sandbox when sandbox_id is omitted. Send files with the surface `post` action's `files` if present, else `attach` (workspace paths or {file_id}); background jobs cannot deliver files. ";
 
   const reachScopeDescription =
     (scratchExec ? '"scoped" (default) | "scratch" | ' : '"scoped" (default) | ') +
@@ -893,12 +893,12 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "sandbox",
     label: "sandbox",
     description:
-      "Manage sandbox computers. list: providers, inventory, this scope's default. create: a blank sandbox (default unchanged). set_default: route commands there (null clears). status: health. restart: recover working state, stop processes. retire: delete (not while default or running jobs). If work needs a computer and there is no default, list, create, set_default and retry; report blocked only if creation fails.",
+      "Manage sandbox computers. list: providers, inventory, this scope's default. create: a blank sandbox (default unchanged). set_default: route commands there (null clears). status: health. restart: stop processes, recover state where supported. retire: delete (not while default or running jobs). If work needs a computer and there is no default, list, create, set_default and retry; report blocked only if creation fails.",
     parameters: Type.Object({
       action: Type.String({ enum: sandboxActions }),
       sandbox_id: Type.Optional(
         Type.Union([Type.String({ minLength: 1 }), Type.Null()], {
-          description: "Sandbox ID; omit for the default. null only for set_default.",
+          description: "Sandbox ID; status/restart use the default if omitted. null only for set_default.",
         }),
       ),
       backend: Type.Optional(Type.String({ description: "create: provider from list." })),
@@ -995,8 +995,8 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       name: search ? "search_skills" : "list_skills",
       label: search ? "Search skills" : "List skills",
       description: search
-        ? "Search all skills by name or description; read one before using it."
-        : "Browse all skills, beyond the shortlist; page with nextOffset.",
+        ? "Search current-scope and org skills by name or description (set source for a carried one); read one before using it."
+        : "Browse current-scope and org skills beyond the shortlist (set source for a carried one); page with nextOffset.",
       parameters: Type.Object({
         ...(search
           ? { query: Type.String({ minLength: 1, description: "Words to find in skill names or descriptions." }) }
@@ -1029,7 +1029,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "skill",
     label: "skill",
     description:
-      "Load a skill's SKILL.md (or the file at `path`) before relying on it. Any scripts it ships are synced to a reported directory on the computer; re-reading refreshes them.",
+      "Load a skill's SKILL.md (or the file at `path`) before relying on it. Any scripts it ships are synced to a reported directory on the computer.",
     parameters: Type.Object({
       name: Type.String({ description: "Skill name." }),
       source: Type.Optional(Type.String({ description: "Source from the list/search call that found it." })),
@@ -1190,7 +1190,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     description:
       "Publish a workspace directory (verify it exists and has files) as a durable web app with a stable link. It must listen on PORT; pass `entrypoint` for a new app or code update. " +
       "New apps are readable by their creation channel (DMs private); republishing never changes access — use share. Give the user the full absolute URL. " +
-      "Egress is open. Only $DATA_DIR survives restarts and redeploys; for a database use SQLite at exactly $DATA_DIR/app.db. " +
+      "Egress is open. When the runtime sets $DATA_DIR, only it survives restarts and redeploys; for a database use SQLite at exactly $DATA_DIR/app.db. " +
       "Apps sleep when idle; set `alwaysOn` only when someone needs instant loads. Iframes need `embedAncestors`.",
     parameters: Type.Object({
       dir: Type.Optional(
@@ -1424,7 +1424,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     label: "history",
     description:
       "Search or reopen this conversation's own transcript (including parts compacted out of context; tool results excluded) when something said earlier is not in front of you. " +
-      "`query` returns the newest matching entries tagged type#seq; `seq` returns one entry in full.",
+      "`query` returns the newest matching entries tagged type#seq; `seq` returns one entry (very long ones trimmed in the middle).",
     parameters: Type.Object({
       query: Type.Optional(Type.String({ description: "Words to find (all must match, case-insensitive)." })),
       seq: Type.Optional(Type.Integer({ description: "Reopen this entry in full instead of searching." })),
@@ -2175,9 +2175,9 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       "DELIVERY: by default a cron posts back to this conversation; keep that for watches and follow-ups on work started here, and don't pick a DM just because this is one. " +
       'Otherwise set `recipient` (teammate → DM), `channel`, `participants` (member ids → an existing group DM; reach it once first), or `destinationKey` (from the "Where scheduled tasks post" menu); ' +
       'scope="personal" runs it at the asker\'s own scope and DMs them. Never put the destination inside `task`. retarget changes the destinationKey.\n' +
-      "ACCESS: a cron belongs to its creator and runs as them; everyone here can see it, only the owner can change it unless shared with permission=write; deleted if the owner leaves.\n" +
+      "ACCESS: a cron belongs to its creator and runs as them; everyone here can see it, only the owner can change it unless shared with permission=write; deleted at its next fire if the owner has left its private channel or group.\n" +
       'list: 25 per page. get: one in full. runs: the fire log (a fire shows as "running" from the moment it starts). ' +
-      "patch: edit in place. `task` is the standing instructions; durable run-state goes in this conversation's Files with the file ID left in the note, never only in `task` or on sandbox disk; small progress state can live in the note itself. " +
+      "patch: edit in place. `task` is the standing instructions; durable run-state goes in this conversation's Files with the file ID left in the note (recurring non-loop crons only), never only in `task` or on sandbox disk; small progress state can live in the note itself. " +
       "delete: remove for good. run: fire once now (refused while a fire is running). disable: pause.\n" +
       `note (inside a fire): a one- or two-sentence shift-change note (max ${CRON_FIRE_NOTE_MAX_CHARS} chars) the next fire reads first; overwrites the previous one; never credentials.`,
     parameters: Type.Object({
@@ -2239,7 +2239,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       ),
       session: Type.Optional(
         Type.Boolean({
-          description: "create/patch: show as ongoing work in this conversation (default true).",
+          description: "Show as ongoing work in this conversation. create: default true; patch: omit to keep.",
         }),
       ),
       unfurlLinks: Type.Optional(Type.Boolean({ description: "create/patch: false suppresses Slack link previews." })),
@@ -2865,7 +2865,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       description = "Share a Files record by ID (upload a sandbox path with POST /v1/files/uploads first).";
     if (move)
       description =
-        "Move to another context; shares survive. Moving a skill to the org needs an org admin on a user-started turn.";
+        "Move to another context; moving an app transfers ownership; shares survive. Moving a skill to the org needs an org admin on a user-started turn.";
     else if (type === "deploy")
       description =
         "Change access to an app you own: `public`, or toScope/email for signed-in access (external emails view-only).";
@@ -3545,7 +3545,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "finish_silently",
     label: "finish_silently",
     description:
-      "End this turn without replying (surface turns that deserve none; scheduled fires with nothing to report). Not needed after posting; a no-op on a direct human turn without surface tools.",
+      "End this turn without replying (surface turns that deserve none; scheduled fires with nothing to report). Not needed after posting; a no-op on turns without surface tools other than scheduled fires.",
     parameters: Type.Object({
       reason: Type.Optional(Type.String({ description: "Short phrase for the audit log." })),
     }),
@@ -3605,7 +3605,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     label: "create",
     description:
       'Register a goal only when the user explicitly asks for sustained work ("grind on X for 30 minutes", "keep going until the tests pass"); never infer one. Create it first, before any work, with the floor set to exactly the amount named (20 minutes = minMs 1200000), even if the task looks hard or impossible. ' +
-      "The harness then answers any attempt to end a reply with a keep-going prompt until the goal is complete and the floor met; only the user can stop it. Fails if an unfinished goal exists.",
+      "The harness then answers any attempt to end a reply with a keep-going prompt while the goal is active or the floor unmet (token_cap or a governor pause also ends it); only the user can cancel it. Fails if an unfinished goal exists.",
     parameters: GoalCreateParams,
     async execute(callId, params) {
       const p = params as GoalCreateInput;
@@ -3675,7 +3675,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "update",
     label: "update",
     description:
-      "complete: only when the objective is actually achieved, never because budget is low or you are stopping; an independent governor reads the objective, your recent work, note and named files, and may reject (the goal stays active with its reasons). " +
+      "complete: only when the objective is actually achieved, never because budget is low or you are stopping; an independent governor reads the objective, your recent work, note and named files, and may reject (the goal stays active with its reasons) or pause it for the user. " +
       "resume/cancel: only when the person in this turn explicitly asks; never to escape unfinished work.",
     parameters: Type.Object({
       status: Type.Union([Type.Literal("complete"), Type.Literal("resume"), Type.Literal("cancel")]),
@@ -3934,7 +3934,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "context",
     label: "context",
     description:
-      "Shrink model context to recent entries, a saved summary and goal state (stored history is untouched). The unfinished request then resumes; do not repeat completed actions. Call it alone after other tools finish.",
+      "Shrink model context to recent entries, the saved summary if it fits, and goal state (stored history is untouched). The unfinished request then resumes; do not repeat completed actions. Call it alone after other tools finish.",
     parameters: Type.Object({ action: Type.Literal("compact"), mode: Type.Literal("recent") }),
     async execute(callId, params) {
       await recordCall(callId, { tool: "context", ...params });
@@ -3955,7 +3955,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "runtime",
     label: "runtime",
     description:
-      "Inspect or change your model, harness, effort and fast mode. get: active runtime and choices. set: change it (omitted settings kept). inherit: back to the scope default (with lifetime scope, clears the scope override). A change stops this runtime and resumes the task on the new one, so call it alone after other tools finish. lifetime task (default) covers this request or cron fire; scope also sets the scope default and needs a live user. Check here before claiming you cannot switch.",
+      "Inspect or change your model, harness, effort and fast mode. get: active runtime and choices. set: change it (omitted settings kept). inherit: back to the scope default (with lifetime scope, clears the scope override). A change stops this runtime and resumes the task on the new one, so call it alone after other tools finish. lifetime task (default) covers this request or cron fire; scope also sets the scope default. Changes need a live user, except task changes in a cron fire, and are refused while a goal is open. Check here before claiming you cannot switch.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("get"), Type.Literal("set"), Type.Literal("inherit")]),
       model: Type.Optional(Type.String({ description: "Model ID or exact display name from get." })),
@@ -3963,7 +3963,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       effort: Type.Optional(
         Type.String({
           description:
-            "A level from get's effortLevelsByHarness. adaptive = native Auto; default = provider default; auto = legacy harness default.",
+            "A level from get's modelCatalog[model].effortLevelsByHarness[harness]. adaptive = native Auto; default = provider default; auto = legacy harness default.",
         }),
       ),
       fastMode: Type.Optional(Type.Boolean()),

@@ -31,7 +31,7 @@ export const adminOperations = {
   resources: operation("List scope configuration resources.", "GET", "/resources"),
   config: operation("Read a scope's configuration.", "GET", "/scopes/:scope", scope),
   configure: operation(
-    "Update one nonsecret configuration resource (connector and credential setters stay on the self-API). The admin skill documents each value shape.",
+    "Update one nonsecret configuration resource (connector and credential setters stay on the self-API). The admin skill documents common value shapes.",
     "PUT",
     "/scopes/:scope/:resource",
     {
@@ -139,7 +139,9 @@ export const adminOperations = {
       ),
     },
   ),
-  revoke_external: operation("Revoke an external member's access.", "DELETE", "/external-users/:id", { id: string }),
+  revoke_external: operation("Revoke an external member (id = email).", "DELETE", "/external-users/:id", {
+    id: string,
+  }),
   onboarding: operation("Set a user's onboarding state.", "PUT", "/users/:id/onboarding", {
     id: string,
     value: object,
