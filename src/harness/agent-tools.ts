@@ -1427,7 +1427,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       "`query` returns the newest matching entries tagged type#seq; `seq` returns one entry (very long ones trimmed in the middle).",
     parameters: Type.Object({
       query: Type.Optional(Type.String({ description: "Words to find (all must match, case-insensitive)." })),
-      seq: Type.Optional(Type.Integer({ description: "Reopen this entry in full instead of searching." })),
+      seq: Type.Optional(Type.Integer({ description: "Reopen this entry instead of searching." })),
       limit: Type.Optional(Type.Integer({ description: "Max entries for query mode (default 20)." })),
     }),
     async execute(callId, params) {
@@ -3545,7 +3545,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "finish_silently",
     label: "finish_silently",
     description:
-      "End this turn without replying (surface turns that deserve none; scheduled fires with nothing to report). Not needed after posting; a no-op on turns without surface tools other than scheduled fires.",
+      "End this turn without replying (surface turns that deserve none; scheduled fires with nothing to report). Not needed after posting; a no-op on turns without surface tools other than cron, webhook and watch fires.",
     parameters: Type.Object({
       reason: Type.Optional(Type.String({ description: "Short phrase for the audit log." })),
     }),
