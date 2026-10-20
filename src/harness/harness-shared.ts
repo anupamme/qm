@@ -15,7 +15,6 @@ import { errMessage, swallowAs } from "../util/errors.ts";
 import { INTERRUPTED_TOOL_RESULT } from "./context-compaction.ts";
 
 export interface HarnessToolPlumbing {
-  scratchExec?: boolean;
   ownerAuthExec?: boolean;
   reachExec?: boolean;
   mcpTools?: () => McpToolDescriptor[];
@@ -128,7 +127,6 @@ export function harnessToolContext(turn: HarnessTurnInput): ToolContextRef {
 
 export function harnessToolOptions(opts: HarnessToolPlumbing, turn?: HarnessTurnInput): AgentToolsOptions {
   return {
-    scratchExec: opts.scratchExec,
     ownerAuthExec: opts.ownerAuthExec,
     reachExec: opts.reachExec,
     ...(opts.mcpTools ? { mcpTools: opts.mcpTools } : {}),
