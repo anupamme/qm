@@ -498,8 +498,8 @@ test("sandbox advertises available management actions and retires migrate", asyn
 test("sandbox tells the agent to provision a missing default before reporting a blocker", () => {
   const ref: ToolContextRef = { current: fakeToolContext(), emit: () => {}, scopeLabel: "group:C1" };
   const sandbox = createAgentTools(ref, { sandboxResources: true }).find((t) => t.name === "sandbox")!;
-  assert.match(sandbox.description, /needs a computer and this scope has no default/i);
-  assert.match(sandbox.description, /list.*create.*set_default.*retry/is);
+  assert.match(sandbox.description, /needs a computer and there is no default/i);
+  assert.match(sandbox.description, /list, create, set_default and retry/is);
   assert.match(sandbox.description, /report.*blocked.*creation fails/is);
 });
 
@@ -1751,10 +1751,11 @@ test('execute scope:"owner" routes only when the owner-auth surface is enabled',
 test("publish instructions prevent malformed app configs", () => {
   const apps = createAgentTools({ current: fakeToolContext() }).find((tool) => tool.name === "apps");
   assert.ok(apps);
-  assert.match(apps.description, /always pass `entrypoint`/);
-  assert.match(apps.description, /workspace-relative/);
-  assert.match(apps.description, /verify.*directory.*contains files/i);
-  assert.match(apps.description, /`renameFrom`.*deployment name.*not.*ID/i);
+  assert.match(apps.description, /pass `entrypoint` for a new app or code update/);
+  const properties = (apps.parameters as { properties: Record<string, { description?: string }> }).properties;
+  assert.match(properties.dir!.description!, /workspace-relative/i);
+  assert.match(apps.description, /verify it exists and has files/i);
+  assert.match(properties.renameFrom!.description!, /existing deployment name/i);
 });
 
 test("publish reply states owner + resolved audience in human terms (ADR 0003 D7)", async () => {
@@ -1869,9 +1870,9 @@ test("background dispatches each action and emits tool_call/tool_result", async 
   };
   const background = createAgentTools(ref).find((t) => t.name === "background");
   assert.ok(background);
-  assert.match(background.description, /same environment a foreground `execute` does/);
-  assert.match(background.description, /\$AGENT_CREDENTIAL_TOKEN all work/);
-  assert.match(background.description, /expire 48 hours after the turn/);
+  assert.match(background.description, /same environment as foreground execute/);
+  assert.match(background.description, /\$AGENT_CREDENTIAL_TOKEN/);
+  assert.match(background.description, /expire 48 hours after the launching turn/);
 
   const started = textOf(
     await call(
@@ -3418,7 +3419,7 @@ test("subagents open exposes noComputer and preserves the internal restriction",
   const properties = (session.parameters as { properties: Record<string, { description?: string }> }).properties;
   assert.ok(properties.noComputer);
   assert.equal(properties.readOnly, undefined);
-  assert.match(properties.noComputer.description!, /no shell, filesystem, browser/);
+  assert.match(properties.noComputer.description!, /no shell, files, browser/);
   const shape = (fromJSONSchema(session.parameters as Parameters<typeof fromJSONSchema>[0]) as ZodObject).shape;
   assert.ok(!Check(session.parameters, { action: "open", task: "test", noComputer: "true" }));
   for (const noComputer of [undefined, false, true]) {
@@ -3589,7 +3590,7 @@ test("resource actions preserve sharing targets, transfer semantics and file con
   const pathShare = { action: "share", path: "notes", scope: "org", sandbox_id: "sb1" };
   assert.ok(Check(files.parameters, pathShare));
   const rejected = await call(files, pathShare);
-  assert.match(textOut(rejected), /upload it with POST \/v1\/files\/uploads first/);
+  assert.match(textOut(rejected), /upload a sandbox path with POST \/v1\/files\/uploads first/);
   assert.deepEqual(writes, [["notes", "", undefined]]);
   const invalidAppShare = { action: "share", id: "app", toScope: "org", unknown: true };
   const apps = tools.find((tool) => tool.name === "apps")!;
@@ -4015,8 +4016,8 @@ test("subagents and sessions are separate tools with one noun each", async () =>
   const tools = createAgentTools({ current: tc }, { surfaceName: "web" });
   const subagents = tools.find((tool) => tool.name === "subagents")!;
   const sessions = tools.find((tool) => tool.name === "sessions")!;
-  assert.match(subagents.description, /does not get its own sidebar entry/);
-  assert.match(subagents.description, /or see this conversation/);
+  assert.match(subagents.description, /cannot see this conversation/);
+  assert.match(subagents.description, /sidebar conversations use sessions/);
   assert.match(sessions.description, /web sidebar/);
   for (const action of ["open", "followup_task", "wait"])
     assert.ok(!Check(sessions.parameters, { action }), `sessions has no ${action}`);
@@ -4050,7 +4051,7 @@ test("background process guidance reflects the configured sandbox token lifetime
   assert.match(guidance(), /turn tokens expire 48 hours/);
   assert.match(guidance({ sandboxCapabilityTtlMs: 72 * 3_600_000 }), /turn tokens expire 72 hours/);
   const unlimited = guidance({ sandboxCapabilityTtlMs: 0 });
-  assert.match(unlimited, /does not expire those turn tokens/);
+  assert.match(unlimited, /turn tokens do not expire here/);
   assert.doesNotMatch(unlimited, /turn tokens expire \d+ hours/);
 });
 
