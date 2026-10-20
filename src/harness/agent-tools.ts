@@ -581,7 +581,8 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       }),
     ),
     purpose: Type.String({
-      description: "Intent label, at most 4 words; shown in activity and approval requests.",
+      description:
+        "Intent label, at most 4 words, describing the purpose not the code; shown in activity and approval requests.",
     }),
     timeout_seconds: Type.Optional(
       Type.Integer({
@@ -736,7 +737,6 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
   const sandboxSelector = (description: string) => Type.Optional(Type.String({ minLength: 1, description }));
   const FILE_SEND_GUIDANCE =
     "Tools taking sandbox_id use the default when it is omitted. Send files with the surface `post` action's `files` if present, else `attach` (workspace paths or {file_id}); background jobs cannot deliver files. ";
-  const DURABLE_PARAM_DESC = "Fixed per scope: true on scoped, false otherwise.";
 
   const reachScopeDescription =
     (scratchExec ? '"scoped" (default) | "scratch" | ' : '"scoped" (default) | ') +
@@ -845,9 +845,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
         scope: Type.Optional(Type.String({ description: reachScopeDescription })),
         ...(scratchExec || ownerAuthExec
           ? {
-              durable: Type.Optional(
-                Type.Boolean({ description: `${DURABLE_PARAM_DESC} Ignored when reaching a room.` }),
-              ),
+              durable: Type.Optional(Type.Boolean()),
             }
           : {}),
       }),
@@ -868,11 +866,11 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
               ...(ownerAuthExec ? [Type.Literal("owner")] : []),
             ],
             {
-              description: "Which computer runs this; see above.",
+              description: "Which computer runs this; see the tool description.",
             },
           ),
         ),
-        durable: Type.Optional(Type.Boolean({ description: DURABLE_PARAM_DESC })),
+        durable: Type.Optional(Type.Boolean()),
       }),
       execute: (callId, params) => runCommand(callId, params as Parameters<typeof runCommand>[1]),
     });
@@ -905,7 +903,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       ),
       backend: Type.Optional(Type.String({ description: "create: provider from list." })),
       name: Type.Optional(Type.String({ description: "create: display name." })),
-      purpose: Type.String({ description: "Intent label, at most 4 words." }),
+      purpose: Type.String({ description: "As for execute." }),
     }),
     async execute(callId, params) {
       const tc = ref.current;
@@ -1089,7 +1087,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
   const read = defineTool({
     name: "read",
     label: "read",
-    description: "Read a workspace file.",
+    description: "Read a workspace or shared file.",
     parameters: Type.Object({
       path: Type.String({ description: "Workspace-relative path." }),
       sandbox_id: sandboxSelector("Sandbox; omit for the default."),
@@ -1193,11 +1191,12 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       "Publish a workspace directory (verify it exists and has files) as a durable web app with a stable link. It must listen on PORT; pass `entrypoint` for a new app or code update. " +
       "New apps are readable by their creation channel (DMs private); republishing never changes access — use share. Give the user the full absolute URL. " +
       "Egress is open. Only $DATA_DIR survives restarts and redeploys; for a database use SQLite at exactly $DATA_DIR/app.db. " +
-      "Apps sleep when idle unless `alwaysOn`; iframes need `embedAncestors`.",
+      "Apps sleep when idle; set `alwaysOn` only when someone needs instant loads. Iframes need `embedAncestors`.",
     parameters: Type.Object({
       dir: Type.Optional(
         Type.String({
-          description: "Workspace-relative directory, e.g. `app` (default: whole tree); never absolute.",
+          description:
+            "Workspace-relative directory, e.g. `app` (default: whole tree); never absolute or `workspace/app`.",
         }),
       ),
       entrypoint: Type.Optional(
@@ -1283,7 +1282,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "memory",
     label: "memory",
     description:
-      "Your durable memory of the person or team you work for; it persists across conversations and surfaces and is not a file. " +
+      "Your durable memory of the person or team you work for; it persists across conversations and surfaces. It is not a file: writing MEMORY.md does nothing. " +
       "Reads may span authorized notebooks; writes change only this conversation's notebook. " +
       "search: facts matching every word of `query` across readable notebooks — only a bounded selection is loaded into context, so search before asking. " +
       "read: this notebook with fact #ids (pass `scope` from a search result for another notebook). " +
@@ -1519,7 +1518,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       target: Type.Optional(
         Type.String({
           description:
-            "\"parent\", or a subagent's sessionId or exact title (yours or a sibling's). read: omit to list.",
+            "\"parent\", or a subagent's sessionId or exact title (yours or a sibling's), never a filesystem path. read: omit to list.",
         }),
       ),
       text: Type.Optional(Type.String({ description: "send_message: the message." })),
@@ -2172,13 +2171,13 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       "Schedule future or recurring work and manage it. Confirm the timing with the user before creating. One job = one cron: list first and patch an existing one rather than creating a second.\n" +
       'create: always set `title`, a distinctive 2-5 word label for what the cron is FOR (e.g. "Gmail unread digest"), never the command or a generic word. ' +
       "Give either `task` (a prompt re-evaluated at each fire) or `text` (exact words to relay). " +
-      "`schedule`: {cron,timezone} for anything tied to a time of day or calendar (IANA timezone; the user's local one unless they name another), {everyMs} for sub-day polling only (first run one interval from now), or {firstFireAt} (epoch ms, one-shot; Date.now() means now).\n" +
-      "DELIVERY: by default a cron posts back to this conversation; keep that for watches and follow-ups on work started here. " +
+      "`schedule`: {cron,timezone} for anything tied to a time of day or calendar (IANA timezone: the user's local one unless they name another; omit for this turn's), {everyMs} for sub-day polling only (first run one interval from now), or {firstFireAt} (epoch ms, one-shot; Date.now() means now). Never compute future epochs for calendar times.\n" +
+      "DELIVERY: by default a cron posts back to this conversation; keep that for watches and follow-ups on work started here, and don't pick a DM just because this is one. " +
       'Otherwise set `recipient` (teammate → DM), `channel`, `participants` (member ids → an existing group DM; reach it once first), or `destinationKey` (from the "Where scheduled tasks post" menu); ' +
       'scope="personal" runs it at the asker\'s own scope and DMs them. Never put the destination inside `task`. retarget changes the destinationKey.\n' +
       "ACCESS: a cron belongs to its creator and runs as them; everyone here can see it, only the owner can change it unless shared with permission=write; deleted if the owner leaves.\n" +
       'list: 25 per page. get: one in full. runs: the fire log (a fire shows as "running" from the moment it starts). ' +
-      "patch: edit in place. `task` is the standing instructions; durable run-state goes in this conversation's Files with the file ID left in the note, never only in `task` or on sandbox disk. " +
+      "patch: edit in place. `task` is the standing instructions; durable run-state goes in this conversation's Files with the file ID left in the note, never only in `task` or on sandbox disk; small progress state can live in the note itself. " +
       "delete: remove for good. run: fire once now (refused while a fire is running). disable: pause.\n" +
       `note (inside a fire): a one- or two-sentence shift-change note (max ${CRON_FIRE_NOTE_MAX_CHARS} chars) the next fire reads first; overwrites the previous one; never credentials.`,
     parameters: Type.Object({
@@ -3072,7 +3071,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
 
   if (ref.current === null || ref.current.admin?.operationsAvailable)
     admin.description =
-      "Admin API; authority is rechecked on every call and audited. Private content needs a live admin in a DM or Open conversation. Admin-role changes, impersonation, identity links and teammate invitations are portal-only. Confirm every mutation, report exactly what changed, and disclose only what this conversation needs. Never put secrets in arguments.\n\n" +
+      "Admin API; authority is rechecked on every call and audited. Private content needs a live admin in a DM or Open conversation; unattended reads need explicit grants. Admin-role changes, impersonation, identity links and teammate invitations are portal-only. Confirm every mutation, report exactly what changed, and disclose only what this conversation needs. Never put secrets in arguments.\n\n" +
       admin.description;
 
   const surfaceName = opts?.surfaceName ?? "slack";
@@ -3956,7 +3955,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
     name: "runtime",
     label: "runtime",
     description:
-      "Inspect or change your model, harness, effort and fast mode. get: active runtime and choices. set: change it (omitted settings kept). inherit: back to the scope default. A change stops this runtime and resumes the task on the new one, so call it alone after other tools finish. lifetime task (default) covers this request or cron fire; scope also sets the scope default and needs a live user. Check here before claiming you cannot switch.",
+      "Inspect or change your model, harness, effort and fast mode. get: active runtime and choices. set: change it (omitted settings kept). inherit: back to the scope default (with lifetime scope, clears the scope override). A change stops this runtime and resumes the task on the new one, so call it alone after other tools finish. lifetime task (default) covers this request or cron fire; scope also sets the scope default and needs a live user. Check here before claiming you cannot switch.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("get"), Type.Literal("set"), Type.Literal("inherit")]),
       model: Type.Optional(Type.String({ description: "Model ID or exact display name from get." })),

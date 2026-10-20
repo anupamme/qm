@@ -129,7 +129,7 @@ export const adminOperations = {
     principal: optionalString,
   }),
   invite_external: operation(
-    "Invite an external member (confirm recipient and expiry; admin invitations are portal-only).",
+    "Invite an external member for a stated expiry (admin invitations are portal-only).",
     "POST",
     "/external-users",
     {
