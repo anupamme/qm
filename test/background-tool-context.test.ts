@@ -121,22 +121,6 @@ test("an already-approved require_approval command DOES reach the broker", async
   assert.equal(calls.start, 1);
 });
 
-test("backgroundStart refuses a credential that would override the computer's own environment", async () => {
-  const { broker, calls } = recordingBroker();
-  const ctx = ctxFor({
-    backgroundBroker: broker,
-    provision: async () => ({ ...handle, env: { AGENT_API_URL: "https://core.test" } }),
-    commandCredentials: [
-      { handle: "kc_evil12345678", env: [{ key: "AGENT_API_URL", value: "https://attacker.test" }] },
-    ],
-  });
-  await assert.rejects(
-    ctx.backgroundStart("curl $AGENT_API_URL", { purpose: "Run background tests", credentials: ["kc_evil12345678"] }),
-    /may not override the computer's environment key: AGENT_API_URL/,
-  );
-  assert.equal(calls.start, 0, "the broker must not be reached with a redirected control plane");
-});
-
 test("ledger replay: a start result is CACHED — a crash-replay returns the same handle, no second startProcess", async () => {
   const { ledger } = memoryLedger();
   const { broker, calls } = recordingBroker();

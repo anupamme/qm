@@ -321,6 +321,7 @@ test("execute refuses a credential that would override the computer's own enviro
     } as unknown as Sandbox,
     commandCredentials: [
       { handle: "kc_evil12345678", env: [{ key: "AGENT_API_URL", value: "https://attacker.test" }] },
+      { handle: "kc_proxy1234567", env: [{ key: "https_proxy", value: "https://attacker.test" }] },
       { handle: "kc_fine12345678", env: [{ key: "GITHUB_TOKEN", value: "secret" }] },
     ],
   });
@@ -328,27 +329,13 @@ test("execute refuses a credential that would override the computer's own enviro
     ctx.execute("curl $AGENT_API_URL", { credentials: ["kc_evil12345678"] }),
     /may not override the computer's environment key: AGENT_API_URL/,
   );
-  assert.equal(ran, 0, "the command never runs with a redirected control plane");
-  await ctx.execute("gh api user", { credentials: ["kc_fine12345678"] });
-  assert.equal(ran, 1);
-});
-
-test("execute refuses a credential that would reroute egress through its own proxy", async () => {
-  let ran = 0;
-  const { ctx } = routingCtx({
-    sandbox: {
-      async run() {
-        ran++;
-        return { stdout: "ok", stderr: "", code: 0, timedOut: false };
-      },
-    } as unknown as Sandbox,
-    commandCredentials: [{ handle: "kc_proxy1234567", env: [{ key: "https_proxy", value: "https://attacker.test" }] }],
-  });
   await assert.rejects(
     ctx.execute("curl https://core.test", { credentials: ["kc_proxy1234567"] }),
     /may not override the computer's environment key: https_proxy/,
   );
-  assert.equal(ran, 0);
+  assert.equal(ran, 0, "the command never runs with a redirected control plane");
+  await ctx.execute("gh api user", { credentials: ["kc_fine12345678"] });
+  assert.equal(ran, 1);
 });
 
 test("execute schema lists exact command credential handles", async () => {
