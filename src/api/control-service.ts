@@ -322,6 +322,8 @@ export const UNATTENDED_ADMIN_GRANTS = [
   "admin.audit.read",
   "admin.egress.read",
   "admin.files.read",
+  "admin.spend.read",
+  "admin.crons.read",
 ] as const;
 
 function validateUnattendedGrants(grants: string[]): string | null {
@@ -430,14 +432,15 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
           };
         }
         destination = r.destination;
+        const sharedAudienceScope = (req.unattendedGrants?.length ?? 0) > 0 ? undefined : r.destination.audienceScopeId;
         if (r.recipient) resolvedRecipient = r.recipient;
         if (r.channel) {
           resolvedChannel = r.channel;
-          ownerScopeId = r.destination.audienceScopeId ?? ownerScopeId;
+          ownerScopeId = sharedAudienceScope ?? ownerScopeId;
         }
         if (r.group) {
           resolvedGroup = r.group;
-          ownerScopeId = r.destination.audienceScopeId ?? ownerScopeId;
+          ownerScopeId = sharedAudienceScope ?? ownerScopeId;
         }
       } else {
         const resolved = resolveCapabilityDestination(capability, req.destinationKey);

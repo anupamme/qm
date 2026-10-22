@@ -293,10 +293,17 @@ test("an unattended admin-read grant opens only the five read-only routes and ke
     }
 
     const ungranted = await capFor("admin-alice", { live: false });
-    assert.equal(
-      (await fetch(`${s.base}/v1/admin/sessions`, { headers: { "x-agent-capability": ungranted } })).status,
-      403,
+    const ungrantedRead = await fetch(`${s.base}/v1/admin/spend`, { headers: { "x-agent-capability": ungranted } });
+    assert.equal(ungrantedRead.status, 403);
+    assert.match(
+      ((await ungrantedRead.json()) as { message: string }).message,
+      /lacks the unattended grant admin\.spend\.read/,
     );
+    const noGrantRoute = await fetch(`${s.base}/v1/admin/memory?${scopeQ}`, {
+      headers: { "x-agent-capability": ungranted },
+    });
+    assert.equal(noGrantRoute.status, 403);
+    assert.match(((await noGrantRoute.json()) as { message: string }).message, /cannot use this route/);
     const channelGrant = await capFor("admin-alice", {
       live: false,
       grants: ["admin.sessions.read"],
@@ -320,12 +327,16 @@ test("each new unattended read grant opens exactly its own routes", async () => 
       ["admin.audit.read", [`/v1/admin/audit?${scopeQ}`]],
       ["admin.egress.read", [`/v1/admin/egress?${scopeQ}`]],
       ["admin.files.read", [`/v1/admin/files?${scopeQ}`]],
+      ["admin.spend.read", ["/v1/admin/spend"]],
+      ["admin.crons.read", [`/v1/admin/crons?${scopeQ}`]],
     ];
     const crossDenied = [
       `/v1/admin/sessions?${scopeQ}`,
       `/v1/admin/audit?${scopeQ}`,
       `/v1/admin/egress?${scopeQ}`,
       `/v1/admin/files?${scopeQ}`,
+      "/v1/admin/spend",
+      `/v1/admin/crons?${scopeQ}`,
     ];
     for (const [grant, allowed] of cases) {
       const token = await capFor("admin-alice", { live: false, grants: [grant] });

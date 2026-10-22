@@ -32,7 +32,11 @@ export async function unattendedGrantRefusal(
   if (!(await app.samePerson(cron.owner, capability.actorId)))
     return forbidden("only the cron owner may set unattended grants");
   if (!cron.ownerScopeId.startsWith("personal:"))
-    return { code: "bad_request", message: "unattended grants require a personal-scope cron" };
+    return {
+      code: "bad_request",
+      message:
+        "unattended grants require a cron in its owner's personal scope — create it from the owner's own DM; it can still deliver to a channel or group DM",
+    };
   let status: Awaited<ReturnType<AdminService["adminStatusOf"]>> | undefined;
   try {
     status = await admin?.adminStatusOf({ id: capability.actorId, type: "internal" });

@@ -145,7 +145,13 @@ const routes: Route<ApiCtx>[] = [
     },
     { method: "GET", path: "/v1/admin/resources", auth: "either", handle: getAdminResources },
     { method: "GET", path: "/v1/admin/retention", auth: "either", handle: retention },
-    { method: "GET", path: "/v1/admin/spend", auth: "either", handle: spend },
+    {
+      method: "GET",
+      path: "/v1/admin/spend",
+      auth: "either",
+      admin: { unattended: { grant: "admin.spend.read", summary: "read the org spend report" } },
+      handle: spend,
+    },
     {
       method: "GET",
       path: "/v1/admin/egress",
@@ -287,7 +293,7 @@ const routes: Route<ApiCtx>[] = [
       method: "GET",
       path: "/v1/admin/crons",
       auth: "either",
-      admin: { privateRead: "always" },
+      admin: { privateRead: "always", unattended: { grant: "admin.crons.read", summary: "list a scope's crons" } },
       handle: listAdminArtifacts,
     },
     {

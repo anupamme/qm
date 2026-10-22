@@ -121,23 +121,63 @@ test("unattended cron grants require a live org-admin owner and protect later pa
   assert.deepEqual(cleared.ok ? cleared.cron.unattendedGrants : undefined, []);
 });
 
-test("all five unattended read grant types are accepted on create", async () => {
+test("every unattended read grant type is accepted on create", async () => {
   const { control } = setup();
-  const created = await control.createCron(
-    {
-      schedule: { everyMs: 3_600_000 },
-      action: "nightly usage analysis",
-      unattendedGrants: ["admin.sessions.read", "admin.audit.read", "admin.egress.read", "admin.files.read"],
-    },
-    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
-  );
-  assert.ok(created.ok, JSON.stringify(created));
-  assert.deepEqual(created.ok ? created.cron.unattendedGrants : undefined, [
+  const grants = [
     "admin.sessions.read",
     "admin.audit.read",
     "admin.egress.read",
     "admin.files.read",
-  ]);
+    "admin.spend.read",
+    "admin.crons.read",
+  ];
+  const created = await control.createCron(
+    { schedule: { everyMs: 3_600_000 }, action: "nightly usage analysis", unattendedGrants: grants },
+    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
+  );
+  assert.ok(created.ok, JSON.stringify(created));
+  assert.deepEqual(created.ok ? created.cron.unattendedGrants : undefined, grants);
+});
+
+test("a grant-carrying cron created from the owner's DM keeps their personal scope while delivering to a channel", async () => {
+  const { built, control } = setup();
+  await built.app.upsertDirectory([{ principalId: "admin-alice", displayName: "Alice", type: "internal" }]);
+  await built.app.upsertChannels(
+    [{ channelId: "C-spend", name: "spend", isPrivate: true }],
+    [{ channelId: "C-spend", principalId: "admin-alice" }],
+  );
+  const request = {
+    schedule: { cron: "0 8 * * 1-5", timezone: "America/Los_Angeles" },
+    action: "daily spend review",
+    channel: "spend",
+    unattendedGrants: ["admin.spend.read", "admin.crons.read", "admin.sessions.read"],
+  };
+
+  const fromDm = await control.createCron(
+    request,
+    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
+  );
+  assert.ok(fromDm.ok, JSON.stringify(fromDm));
+  assert.equal(fromDm.cron.ownerScopeId, scopeId("personal", "admin-alice"));
+  assert.equal(fromDm.cron.destination?.target, "C-spend");
+  assert.deepEqual(fromDm.cron.unattendedGrants, request.unattendedGrants);
+
+  const fromChannel = await control.createCron(
+    request,
+    claims("admin-alice", scopeId("channel", "C-spend"), {
+      liveActor: true,
+      members: [{ id: "admin-alice", type: "internal" }],
+    }),
+  );
+  assert.equal(fromChannel.ok, false);
+  assert.match(fromChannel.ok ? "" : fromChannel.message, /owner's own DM/);
+
+  const ungranted = await control.createCron(
+    { ...request, unattendedGrants: undefined },
+    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
+  );
+  assert.ok(ungranted.ok, JSON.stringify(ungranted));
+  assert.equal(ungranted.cron.ownerScopeId, scopeId("channel", "C-spend"));
 });
 
 test("a raw unreaffirmed cron patch strips unattended grants; a live-owner patch reaffirms them", async () => {
