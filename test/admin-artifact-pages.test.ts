@@ -100,7 +100,7 @@ test("per-kind artifact reads are scope-filtered, authz-gated, and audited", asy
   }
 });
 
-test("an admin cannot point a grant-carrying cron anywhere but its owner", async () => {
+test("an admin cannot repoint a grant-carrying cron; only its owner can", async () => {
   const s = start();
   try {
     const cron = await s.built.app.createCron({
@@ -118,8 +118,12 @@ test("an admin cannot point a grant-carrying cron anywhere but its owner", async
         body: JSON.stringify({ destination }),
       });
     assert.equal((await put({ type: "slack", target: "C9", audienceScopeId: "channel:C9" })).status, 409);
+    assert.equal(
+      (await put({ type: "slack", target: "C9", audienceScopeId: "personal:U1" })).status,
+      409,
+      "a caller-supplied audience cannot launder a room destination",
+    );
     assert.equal((await s.built.app.getCron(cron.id))?.destination, undefined);
-    assert.equal((await put({ type: "slack", target: "D1", audienceScopeId: "personal:U1" })).status, 200);
   } finally {
     await s.close();
   }
