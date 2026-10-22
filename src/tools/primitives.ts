@@ -753,8 +753,10 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
       try {
         addCommandEnv(key, value);
       } catch (error) {
-        await fileExecution!.finish();
-        throw error;
+        return withCleanup(
+          () => Promise.reject(error),
+          () => fileExecution!.finish(),
+        );
       }
     }
     return {

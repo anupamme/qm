@@ -268,7 +268,7 @@ export function isValidCredentialSlug(slug: string): boolean {
   return /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug);
 }
 
-export function isReservedCredentialEnvKey(envKey: string): boolean {
+function isReservedCredentialEnvKey(envKey: string): boolean {
   return envKey.startsWith("AGENT_");
 }
 
@@ -559,11 +559,6 @@ const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function isPersonalCredentialEnvKey(envKey: string): boolean {
   return ENV_KEY_RE.test(envKey) && !isReservedCredentialEnvKey(envKey);
-}
-
-function reservedEnvKeyOf(rec: Pick<KeychainCredential, "envKey" | "fields" | "service">): string | undefined {
-  const keys = rec.fields?.map((f) => f.envKey) ?? [rec.envKey ?? defaultEnvKey(rec.service)];
-  return keys.find(isReservedCredentialEnvKey);
 }
 
 function legacyUsernameEnvKey(passwordEnvKey: string): string {
@@ -1024,8 +1019,6 @@ export function createKeychain(deps: {
   ): MaterializedCred {
     if (isBackendCredential(cred))
       throw new KeychainError(403, "Composio keys stay in the backend; use /v1/composio through the agent API");
-    const reserved = cred.kind === "env" ? reservedEnvKeyOf(cred) : undefined;
-    if (reserved) throw new KeychainError(403, `credential carries the reserved environment key ${reserved}`);
     const materialized = tryDecrypt(cred, (c) =>
       c.kind === "file"
         ? { kind: "file" as const, ...decryptToFiles(c, extra) }
@@ -1562,7 +1555,6 @@ export function createKeychain(deps: {
             c.kind === "env" &&
             !c.managed &&
             !isBackendCredential(c) &&
-            !reservedEnvKeyOf(c) &&
             !expired(c, t),
         )
         .map((c) => tryDecrypt(c, decryptToEnv))
@@ -1581,7 +1573,7 @@ export function createKeychain(deps: {
       for (const grant of await activeGrantsFor(scopeId)) {
         if (grant.mode !== "standing") continue;
         const cred = await deps.creds.get(grant.credentialId);
-        if (!cred || cred.kind !== "env" || isBackendCredential(cred) || reservedEnvKeyOf(cred)) continue;
+        if (!cred || cred.kind !== "env" || isBackendCredential(cred)) continue;
         if (cred.managed === "connector") {
           const value = cred.host ? await connectorTokenForRecord(cred) : null;
           if (value && cred.host) {

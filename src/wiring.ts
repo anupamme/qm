@@ -1218,6 +1218,25 @@ export function buildApp(
       `DELETE FROM keychain_credentials WHERE json ->> 'origin' = 'device-flow-auto-capture'`,
     ],
   });
+  pgArtifactMap?.pool.registerMigration({
+    id: "durable-map/keychain_credentials/0003-delete-reserved-env-keys",
+    statements: [
+      "CREATE TABLE IF NOT EXISTS keychain_credentials (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS keychain_grants (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+      `WITH reserved AS (
+         DELETE FROM keychain_credentials
+         WHERE json ->> 'envKey' LIKE 'AGENT\\_%'
+            OR EXISTS (
+              SELECT 1 FROM jsonb_array_elements(COALESCE(json -> 'fields', '[]'::jsonb)) AS field
+              WHERE field ->> 'envKey' LIKE 'AGENT\\_%'
+            )
+            OR (json ->> 'kind' = 'env' AND json ->> 'envKey' IS NULL AND json -> 'fields' IS NULL
+                AND json ->> 'managed' IS NULL AND upper(json ->> 'service') ~ '^AGENT([^A-Z0-9]|$)')
+         RETURNING id
+       )
+       DELETE FROM keychain_grants WHERE json ->> 'credentialId' IN (SELECT id FROM reserved)`,
+    ],
+  });
   const credentialStore: Keychain = createKeychain({
     creds: artifactMap<KeychainCredential>("keychain_credentials", ["ownerId"]),
     grants: artifactMap<KeychainGrant>("keychain_grants", ["ownerId"]),
