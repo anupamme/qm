@@ -713,6 +713,13 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
     signal?: AbortSignal,
   ) => {
     const commandEnv: Record<string, string> = {};
+    const addCommandEnv = (key: string, value: string) => {
+      if (key in (handle.env ?? {}))
+        throw new Error(`requested credentials may not override the computer's environment key: ${key}`);
+      if (key in commandEnv && commandEnv[key] !== value)
+        throw new Error(`requested credentials provide conflicting environment key: ${key}`);
+      commandEnv[key] = value;
+    };
     const prepared: Array<{
       commit?: () => Promise<void>;
       singleUse?: boolean;
@@ -722,11 +729,7 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
     for (const credential of new Set(requested)) {
       const materialized = credential.resolve ? await credential.resolve() : { env: credential.env ?? [] };
       prepared.push(materialized);
-      for (const { key, value } of materialized.env) {
-        if (key in commandEnv && commandEnv[key] !== value)
-          throw new Error(`requested credentials provide conflicting environment key: ${key}`);
-        commandEnv[key] = value;
-      }
+      for (const { key, value } of materialized.env) addCommandEnv(key, value);
       deps.auditLog?.record({
         at: Date.now(),
         principalId: deps.createdBy,
@@ -746,11 +749,12 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
       ? await prepareExecutionFiles(deps.sandbox, handle, fileCredentials)
       : undefined;
     for (const [key, value] of Object.entries(fileExecution?.env ?? {})) {
-      if (key in commandEnv && commandEnv[key] !== value) {
+      try {
+        addCommandEnv(key, value);
+      } catch (error) {
         await fileExecution!.finish();
-        throw new Error(`requested credentials provide conflicting environment key: ${key}`);
+        throw error;
       }
-      commandEnv[key] = value;
     }
     return {
       commandEnv,
