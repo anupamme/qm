@@ -45,9 +45,9 @@ Limits the API enforces (don't offer what it will refuse):
   a cron can carry **unattended read grants** (`unattendedGrants` on the cron tool or
   the cron: `admin.sessions.read`, `admin.audit.read`, `admin.egress.read`,
   `admin.files.read`, `admin.spend.read`, `admin.crons.read`) — set only on a live turn
-  by the cron's owner, who must be a current org admin, from their own DM; the cron
-  stays in their personal scope even when it delivers to a channel or group DM. When
-  an admin asks for a cron that reads admin data, set the narrowest grants on create.
+  by the cron's owner, who must be a current org admin, on a cron that lives in and
+  delivers only to their own DM (never a channel, group or another person). When an
+  admin asks for a cron that reads admin data, set the narrowest grants on create.
   Each grant opens exactly its own GET
   routes to that cron's autonomous fires, audited as the owner
   (re-checked live — revoking their admin grant closes it). Other mutations work

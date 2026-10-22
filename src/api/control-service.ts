@@ -432,15 +432,14 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
           };
         }
         destination = r.destination;
-        const sharedAudienceScope = (req.unattendedGrants?.length ?? 0) > 0 ? undefined : r.destination.audienceScopeId;
         if (r.recipient) resolvedRecipient = r.recipient;
         if (r.channel) {
           resolvedChannel = r.channel;
-          ownerScopeId = sharedAudienceScope ?? ownerScopeId;
+          ownerScopeId = r.destination.audienceScopeId ?? ownerScopeId;
         }
         if (r.group) {
           resolvedGroup = r.group;
-          ownerScopeId = sharedAudienceScope ?? ownerScopeId;
+          ownerScopeId = r.destination.audienceScopeId ?? ownerScopeId;
         }
       } else {
         const resolved = resolveCapabilityDestination(capability, req.destinationKey);
@@ -454,11 +453,11 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
         destination = resolved.destination;
       }
 
-      if (req.unattendedGrants !== undefined) {
+      if (req.unattendedGrants?.length) {
         const refusal = await unattendedGrantRefusal(
           app,
           admin,
-          { owner: capability.actorId, ownerScopeId },
+          { owner: capability.actorId, ownerScopeId, ...(destination ? { destination } : {}) },
           capability,
         );
         if (refusal) return { ok: false, ...refusal };
@@ -546,7 +545,7 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
       if (req.unattendedGrants !== undefined) patch.unattendedGrants = req.unattendedGrants;
       else if ((before.unattendedGrants?.length ?? 0) > 0) patch.unattendedGrants = before.unattendedGrants;
       if (!cronPatchChanges(before, patch)) return { ok: true, cron: before };
-      if ((before.unattendedGrants?.length ?? 0) > 0 || req.unattendedGrants !== undefined) {
+      if ((patch.unattendedGrants?.length ?? 0) > 0) {
         const refusal = await unattendedGrantRefusal(app, admin, before, capability);
         if (refusal) return { ok: false, ...refusal };
       }
@@ -685,10 +684,6 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
       if (!cron) return { ok: false, code: "not_found", message: `no cron ${id}` };
       if (!(await canAdministerCron(app, cron, capability.actorId)))
         return { ok: false, code: "forbidden", message: "not your cron" };
-      if ((cron.unattendedGrants?.length ?? 0) > 0) {
-        const refusal = await unattendedGrantRefusal(app, admin, cron, capability);
-        if (refusal) return { ok: false, code: "forbidden", message: refusal.message };
-      }
       const resolved = resolveCapabilityDestination(capability, destinationKey);
       if (!resolved.ok) {
         return {
@@ -696,6 +691,15 @@ export function createControlService(app: App, scheduler?: Scheduler, admin?: Ad
           code: "unknown_destination",
           message: "destinationKey is not one of the destinations available for this conversation",
         };
+      }
+      if ((cron.unattendedGrants?.length ?? 0) > 0) {
+        const refusal = await unattendedGrantRefusal(
+          app,
+          admin,
+          { ...cron, destination: resolved.destination },
+          capability,
+        );
+        if (refusal) return { ok: false, code: "forbidden", message: refusal.message };
       }
       if (isDeepStrictEqual(cron.destination, resolved.destination)) return { ok: true, cron };
       const updated = await app.setCronDestination(id, resolved.destination);

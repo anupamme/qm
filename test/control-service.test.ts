@@ -35,11 +35,12 @@ function claims(
   scope: ScopeId = scopeId("personal", actorId),
   extra: Partial<CapabilityClaims> = {},
 ): CapabilityClaims {
+  const dm = { ...D1, audienceScopeId: scopeId("personal", actorId) };
   return {
     actorId,
     scopeId: scope,
-    destination: { type: D1.type, target: D1.target, audienceScopeId: D1.audienceScopeId },
-    destinations: [D1, ROOM],
+    destination: { type: dm.type, target: dm.target, audienceScopeId: dm.audienceScopeId },
+    destinations: [dm, ROOM],
     defaultDestinationKey: D1.key,
     exp: Date.now() + CAPABILITY_TTL_MS,
     ...extra,
@@ -139,45 +140,42 @@ test("every unattended read grant type is accepted on create", async () => {
   assert.deepEqual(created.ok ? created.cron.unattendedGrants : undefined, grants);
 });
 
-test("a grant-carrying cron created from the owner's DM keeps their personal scope while delivering to a channel", async () => {
+test("a grant-carrying cron delivers only to its owner: shared or third-party destinations are refused at create and retarget", async () => {
   const { built, control } = setup();
-  await built.app.upsertDirectory([{ principalId: "admin-alice", displayName: "Alice", type: "internal" }]);
+  await built.app.upsertDirectory([
+    { principalId: "admin-alice", displayName: "Alice", type: "internal" },
+    { principalId: "U2", displayName: "User Two", type: "internal" },
+  ]);
   await built.app.upsertChannels(
-    [{ channelId: "C-spend", name: "spend", isPrivate: true }],
+    [{ channelId: "C-spend", name: "spend", isPrivate: false }],
     [{ channelId: "C-spend", principalId: "admin-alice" }],
   );
+  const live = claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true });
   const request = {
     schedule: { cron: "0 8 * * 1-5", timezone: "America/Los_Angeles" },
     action: "daily spend review",
-    channel: "spend",
-    unattendedGrants: ["admin.spend.read", "admin.crons.read", "admin.sessions.read"],
+    unattendedGrants: ["admin.spend.read"],
   };
 
-  const fromDm = await control.createCron(
-    request,
-    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
-  );
-  assert.ok(fromDm.ok, JSON.stringify(fromDm));
-  assert.equal(fromDm.cron.ownerScopeId, scopeId("personal", "admin-alice"));
-  assert.equal(fromDm.cron.destination?.target, "C-spend");
-  assert.deepEqual(fromDm.cron.unattendedGrants, request.unattendedGrants);
+  for (const elsewhere of [{ channel: "spend" }, { recipient: "User Two" }, { destinationKey: ROOM.key }]) {
+    const refused = await control.createCron({ ...request, ...elsewhere }, live);
+    assert.equal(refused.ok, false, JSON.stringify(elsewhere));
+    assert.match(refused.ok ? "" : refused.message, /delivers only to them/);
+  }
 
-  const fromChannel = await control.createCron(
-    request,
-    claims("admin-alice", scopeId("channel", "C-spend"), {
-      liveActor: true,
-      members: [{ id: "admin-alice", type: "internal" }],
-    }),
-  );
-  assert.equal(fromChannel.ok, false);
-  assert.match(fromChannel.ok ? "" : fromChannel.message, /owner's own DM/);
+  const own = await control.createCron(request, live);
+  assert.ok(own.ok, JSON.stringify(own));
+  assert.equal(own.cron.ownerScopeId, scopeId("personal", "admin-alice"));
 
-  const ungranted = await control.createCron(
-    { ...request, unattendedGrants: undefined },
-    claims("admin-alice", scopeId("personal", "admin-alice"), { liveActor: true }),
-  );
-  assert.ok(ungranted.ok, JSON.stringify(ungranted));
-  assert.equal(ungranted.cron.ownerScopeId, scopeId("channel", "C-spend"));
+  const retarget = await control.retargetCron(own.cron.id, ROOM.key, live);
+  assert.equal(retarget.ok, false);
+  assert.match(retarget.ok ? "" : retarget.message, /delivers only to them/);
+
+  const cleared = await control.patchCron(own.cron.id, { unattendedGrants: [] }, claims("admin-alice"));
+  assert.ok(cleared.ok, "removing grants only narrows access, so it needs no live admin turn");
+  assert.deepEqual(cleared.ok ? cleared.cron.unattendedGrants : undefined, []);
+  const moved = await control.retargetCron(own.cron.id, ROOM.key, live);
+  assert.ok(moved.ok, "once grants are gone the cron can deliver anywhere");
 });
 
 test("a raw unreaffirmed cron patch strips unattended grants; a live-owner patch reaffirms them", async () => {
