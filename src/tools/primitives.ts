@@ -18,6 +18,7 @@ import { canReadNotebook, readNotebook, searchNotebooks } from "../memory/cross-
 import type { SandboxAccessPlan, SandboxResource, SandboxResources } from "../sandbox/sandbox-resources.ts";
 import { join } from "node:path";
 import { workspacePathOf } from "../sandbox/exec-file-ops.ts";
+import { DROPPED_PROXY_ENV } from "../sandbox/sandbox-env.ts";
 import { interpolateSplitEnv } from "../deployment/deployment-layer.ts";
 import type { CredentialPathSpec } from "../credentials/resident-paths.ts";
 import type { ComputerStatus, ExecResult, Sandbox, SandboxHandle } from "../sandbox/sandbox.ts";
@@ -714,9 +715,9 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
   ) => {
     const commandEnv: Record<string, string> = {};
     const addCommandEnv = (key: string, value: string) => {
-      if (key in (handle.env ?? {}))
+      if (DROPPED_PROXY_ENV.has(key) || Object.hasOwn(handle.env ?? {}, key))
         throw new Error(`requested credentials may not override the computer's environment key: ${key}`);
-      if (key in commandEnv && commandEnv[key] !== value)
+      if (Object.hasOwn(commandEnv, key) && commandEnv[key] !== value)
         throw new Error(`requested credentials provide conflicting environment key: ${key}`);
       commandEnv[key] = value;
     };

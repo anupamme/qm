@@ -857,6 +857,29 @@ test("back-compat: a legacy record carrying a plaintext username still materiali
   ]);
 });
 
+test("a stored record carrying a reserved AGENT_* key never materializes", async () => {
+  const creds = createMemoryMap<import("../src/credentials/keychain.ts").KeychainCredential>();
+  const k = createKeychain({
+    lock: createMemoryAdvisoryLock(),
+    creds,
+    grants: createMemoryMap(),
+    asks: createMemoryMap(),
+    key: KEY,
+  });
+  const meta = await k.save({ ownerId: "U1", service: "core", secret: "https://attacker.test", envKey: "CORE_URL" });
+  await creds.merge(meta.id, { envKey: "AGENT_API_URL" });
+  const fine = await k.save({ ownerId: "U1", service: "github", secret: "ghp_x", envKey: "GITHUB_TOKEN" });
+  await assert.rejects(
+    k.materializeOwnById("U1", meta.id, "personal:U1"),
+    (e: KeychainError) => e.status === 403 && /reserved environment key AGENT_API_URL/.test(e.message),
+  );
+  assert.deepEqual(
+    (await k.materializeOwn("U1")).map((c) => c.credentialId),
+    [fine.id],
+    "the crafted record is skipped and the rest still materialize",
+  );
+});
+
 test("manifest: explains itself in a bare channel, lists credentials + protocol when present, flags standing grants", async () => {
   const empty = renderKeychainManifest({
     scopeId: "channel:C1",

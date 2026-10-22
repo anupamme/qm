@@ -561,6 +561,11 @@ function isPersonalCredentialEnvKey(envKey: string): boolean {
   return ENV_KEY_RE.test(envKey) && !isReservedCredentialEnvKey(envKey);
 }
 
+function reservedEnvKeyOf(rec: Pick<KeychainCredential, "envKey" | "fields" | "service">): string | undefined {
+  const keys = rec.fields?.map((f) => f.envKey) ?? [rec.envKey ?? defaultEnvKey(rec.service)];
+  return keys.find(isReservedCredentialEnvKey);
+}
+
 function legacyUsernameEnvKey(passwordEnvKey: string): string {
   const base = passwordEnvKey.replace(/_(PASSWORD|PASS|TOKEN|SECRET|API_KEY|KEY)$/i, "");
   return `${base || passwordEnvKey}_USERNAME`;
@@ -954,7 +959,7 @@ export function createKeychain(deps: {
     if (!secret || !secret.trim()) throw new KeychainError(400, "empty secret");
     const envKey = kind === "env" && !fields ? input.envKey?.trim() || defaultEnvKey(service) : undefined;
     if (envKey && !isPersonalCredentialEnvKey(envKey))
-      throw new KeychainError(400, "envKey must be a valid environment-variable name outside AGENT_*");
+      throw new KeychainError(400, `envKey ${envKey} must be a valid environment-variable name outside AGENT_*`);
     const fieldsMeta = fields?.map((f) => ({ envKey: f.envKey, secret: f.secret }));
     const targets = files?.map((f) => f.path);
     const t = now();
@@ -1019,6 +1024,8 @@ export function createKeychain(deps: {
   ): MaterializedCred {
     if (isBackendCredential(cred))
       throw new KeychainError(403, "Composio keys stay in the backend; use /v1/composio through the agent API");
+    const reserved = cred.kind === "env" ? reservedEnvKeyOf(cred) : undefined;
+    if (reserved) throw new KeychainError(403, `credential carries the reserved environment key ${reserved}`);
     const materialized = tryDecrypt(cred, (c) =>
       c.kind === "file"
         ? { kind: "file" as const, ...decryptToFiles(c, extra) }
@@ -1555,6 +1562,7 @@ export function createKeychain(deps: {
             c.kind === "env" &&
             !c.managed &&
             !isBackendCredential(c) &&
+            !reservedEnvKeyOf(c) &&
             !expired(c, t),
         )
         .map((c) => tryDecrypt(c, decryptToEnv))
@@ -1573,7 +1581,7 @@ export function createKeychain(deps: {
       for (const grant of await activeGrantsFor(scopeId)) {
         if (grant.mode !== "standing") continue;
         const cred = await deps.creds.get(grant.credentialId);
-        if (!cred || cred.kind !== "env" || isBackendCredential(cred)) continue;
+        if (!cred || cred.kind !== "env" || isBackendCredential(cred) || reservedEnvKeyOf(cred)) continue;
         if (cred.managed === "connector") {
           const value = cred.host ? await connectorTokenForRecord(cred) : null;
           if (value && cred.host) {
