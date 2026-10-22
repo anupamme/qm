@@ -249,6 +249,8 @@ import {
 import {
   credentialRequestHeaders,
   createKeychain,
+  DELETE_AUTO_CAPTURED_LOGINS_MIGRATION,
+  DELETE_RESERVED_ENV_KEYS_MIGRATION,
   type ConnectorTokenStore,
   type OAuthToken,
   type Keychain,
@@ -1209,34 +1211,8 @@ export function buildApp(
     ...deriveConnectorKey(keychainKeyMaterial ?? randomBytes(32), "keychain"),
     ...(legacyCredentialKey ? { fallbacks: [legacyCredentialKey] } : {}),
   };
-  pgArtifactMap?.pool.registerMigration({
-    id: "durable-map/keychain_credentials/0002-delete-auto-captured-logins",
-    statements: [
-      "CREATE TABLE IF NOT EXISTS keychain_credentials (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
-      "CREATE TABLE IF NOT EXISTS keychain_grants (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
-      `DELETE FROM keychain_grants WHERE json ->> 'credentialId' IN (SELECT id FROM keychain_credentials WHERE json ->> 'origin' = 'device-flow-auto-capture')`,
-      `DELETE FROM keychain_credentials WHERE json ->> 'origin' = 'device-flow-auto-capture'`,
-    ],
-  });
-  pgArtifactMap?.pool.registerMigration({
-    id: "durable-map/keychain_credentials/0003-delete-reserved-env-keys",
-    statements: [
-      "CREATE TABLE IF NOT EXISTS keychain_credentials (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
-      "CREATE TABLE IF NOT EXISTS keychain_grants (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
-      `WITH reserved AS (
-         DELETE FROM keychain_credentials
-         WHERE json ->> 'envKey' LIKE 'AGENT\\_%'
-            OR EXISTS (
-              SELECT 1 FROM jsonb_array_elements(COALESCE(json -> 'fields', '[]'::jsonb)) AS field
-              WHERE field ->> 'envKey' LIKE 'AGENT\\_%'
-            )
-            OR (json ->> 'kind' = 'env' AND json ->> 'envKey' IS NULL AND json -> 'fields' IS NULL
-                AND json ->> 'managed' IS NULL AND upper(json ->> 'service') ~ '^AGENT([^A-Z0-9]|$)')
-         RETURNING id
-       )
-       DELETE FROM keychain_grants WHERE json ->> 'credentialId' IN (SELECT id FROM reserved)`,
-    ],
-  });
+  pgArtifactMap?.pool.registerMigration(DELETE_AUTO_CAPTURED_LOGINS_MIGRATION);
+  pgArtifactMap?.pool.registerMigration(DELETE_RESERVED_ENV_KEYS_MIGRATION);
   const credentialStore: Keychain = createKeychain({
     creds: artifactMap<KeychainCredential>("keychain_credentials", ["ownerId"]),
     grants: artifactMap<KeychainGrant>("keychain_grants", ["ownerId"]),

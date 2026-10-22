@@ -557,6 +557,36 @@ function defaultEnvKey(service: string): string {
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+export const DELETE_AUTO_CAPTURED_LOGINS_MIGRATION = {
+  id: "durable-map/keychain_credentials/0002-delete-auto-captured-logins",
+  statements: [
+    "CREATE TABLE IF NOT EXISTS keychain_credentials (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS keychain_grants (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+    `DELETE FROM keychain_grants WHERE json ->> 'credentialId' IN (SELECT id FROM keychain_credentials WHERE json ->> 'origin' = 'device-flow-auto-capture')`,
+    `DELETE FROM keychain_credentials WHERE json ->> 'origin' = 'device-flow-auto-capture'`,
+  ],
+};
+
+export const DELETE_RESERVED_ENV_KEYS_MIGRATION = {
+  id: "durable-map/keychain_credentials/0003-delete-reserved-env-keys",
+  statements: [
+    "CREATE TABLE IF NOT EXISTS keychain_credentials (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS keychain_grants (id TEXT PRIMARY KEY, json JSONB NOT NULL)",
+    `WITH reserved AS (
+       DELETE FROM keychain_credentials
+       WHERE json ->> 'envKey' LIKE 'AGENT\\_%'
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements(COALESCE(json -> 'fields', '[]'::jsonb)) AS field
+            WHERE field ->> 'envKey' LIKE 'AGENT\\_%'
+          )
+          OR (json ->> 'kind' = 'env' AND json ->> 'envKey' IS NULL AND json -> 'fields' IS NULL
+              AND json ->> 'managed' IS NULL AND upper(json ->> 'service') ~ '^AGENT([^A-Z0-9]|$)')
+       RETURNING id
+     )
+     DELETE FROM keychain_grants WHERE json ->> 'credentialId' IN (SELECT id FROM reserved)`,
+  ],
+};
+
 function isPersonalCredentialEnvKey(envKey: string): boolean {
   return ENV_KEY_RE.test(envKey) && !isReservedCredentialEnvKey(envKey);
 }
