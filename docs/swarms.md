@@ -154,23 +154,24 @@ Notification enqueue uses a stable deduplication key so a crash between enqueue
 and acknowledgment does not enqueue another run. Agent-only turns have no Slack
 delivery target, and the delivery layer also refuses swarm result delivery.
 
-By default a message wakes only the sender's own workers, and any message from a
-human or carrying a goal wakes its recipients. Every other recipient, such as a
-parent receiving a reply or a peer, gets a `mailbox` notification: no turn runs,
+By default an agent's message wakes nobody; a message from a human or carrying a
+goal wakes its recipients. Lineage plays no part: every other recipient of an
+agent's message gets a `mailbox` notification: no turn runs,
 and the message is handed to the recipient at the start of its next turn, whatever
 starts it, or to a running goal turn like a queued message. They count as delivered
 once the turn's opening entry that carries them is saved, even if that turn later
 stops or fails, because they are already in its transcript. Set `notify:true` when
 the recipient must act now, or `notify:false` for a durable message nobody is
 handed. Turns outside swarm delivery see their mailbox only while the swarm's
-participant rosters are unchanged. Sending to oneself does not wake oneself. When
+participant rosters are unchanged. Sending to oneself does not wake oneself unless
+the message carries a goal. When
 `notifications` is set, every woken recipient consumes that budget.
 
 ### Worker goals
 
 A worker turn normally ends when the worker replies, and the worker then waits
-for its next message. To keep a worker working, its parent can attach a goal to
-`spawn` or `send`:
+for its next message. To keep a worker working, any member can attach a goal to
+`spawn` or `send`, including a goal sent to itself:
 
 ```json
 {
@@ -187,9 +188,11 @@ turn runs under the normal goal loop: the worker is prompted to continue until t
 goal's governor approves completion or pauses it, or an optional `token_cap` is
 spent. A turn that carries a goal runs without the swarm `turnMs` deadline; other
 turns keep it. `floor` and `token_cap` take the same keys as the goal tool, and
-neither is required. Only a parent can assign goals, and
-only to its own workers; a goal needs `notify`. The worker treats its parent as
-the user for the goal and messages it when it needs a decision. Each goal message
+neither is required. Goals go to workers, not the root session, and a goal needs
+`notify`. The worker treats the agent that sent the goal as the user for it and
+messages that agent when it needs a decision. When a goal is complete, the worker
+decides what comes next: a new goal for itself, a message to whoever must act, or
+other work. Each goal message
 installs a fresh goal once (a retried delivery does not reinstall it), so sending
 a goal again replaces a paused or finished one and starts a new token budget.
 
@@ -201,7 +204,7 @@ over in order, on the tool result or with the next prompt. When the turn returns
 without being stopped or cancelled, it marks them handed in the swarm and
 withdraws their queued turns, so they never run again; if the turn fails or is
 stopped first they stay queued and run as their own turns. A goal in one of them replaces the running goal at once,
-so a parent can redirect a busy worker; its work floor counts from when the
+so any member can redirect a busy worker; its work floor counts from when the
 message was sent. A message the screen blocks stays queued, with every message
 after it, and runs as its own turn later; a blocked mailbox message reaches the
 next turn only as a notice that it was withheld.

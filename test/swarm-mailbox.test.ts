@@ -4,7 +4,7 @@ import { createGoalRecord } from "../src/harness/goal.ts";
 import { createSwarmGoalInbox } from "../src/swarms/swarm-goal-inbox.ts";
 import { swarmFixture } from "./support/swarm-fixture.ts";
 
-test("replies and peer messages wait in the recipient's mailbox; parent messages and notify:true still wake", async () => {
+test("an agent's messages wait in each recipient's mailbox whatever their lineage; notify:true wakes", async () => {
   const f = await swarmFixture();
   const [first, second] = await f.service.spawn(f.caller, { requestId: "initial", count: 2, text: "work" });
   await f.service.sweep();
@@ -33,8 +33,9 @@ test("replies and peer messages wait in the recipient's mailbox; parent messages
   assert.deepEqual(quiet.notifications, {});
   assert.deepEqual(await runsFor(ack.id), []);
   assert.deepEqual(await runsFor(peer.id), []);
+  assert.deepEqual(order.notifications, { [first!.id]: { state: "mailbox" } });
+  assert.deepEqual(await runsFor(order.id), []);
   assert.equal((await runsFor(done.id)).length, 1);
-  assert.equal((await runsFor(order.id)).length, 1);
   assert.equal((await f.store.get(f.root.id))!.pending, false);
 });
 

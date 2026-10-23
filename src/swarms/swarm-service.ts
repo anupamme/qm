@@ -766,15 +766,11 @@ export function createSwarmService(deps: {
           throw new Error("swarm message budget exhausted");
         if (input.replyTo && !swarm.messages.some((message) => message.id === input.replyTo))
           throw new Error("reply target is not in this swarm");
-        const recipients = input.notify === false ? [] : audience.filter((peer) => peer !== auth.memberId);
-        if (
-          goal &&
-          (!recipients.length || recipients.some((peer) => memberById(swarm, peer)?.parentId !== auth.memberId))
-        )
-          throw new Error("goals can only be assigned to your own workers");
-        const wakes = (peer: string) =>
-          input.notify ?? (!!goal || caller.kind === "human" || memberById(swarm, peer)?.parentId === auth.memberId);
-        const woken = recipients.filter(wakes).length;
+        const recipients = input.notify === false ? [] : audience.filter((peer) => peer !== auth.memberId || !!goal);
+        if (goal && (!recipients.length || recipients.includes(swarm.id)))
+          throw new Error("goals can only be assigned to workers");
+        const wakes = input.notify ?? (!!goal || caller.kind === "human");
+        const woken = wakes ? recipients.length : 0;
         if (swarm.notificationCount + woken > (swarm.settings.notifications ?? Infinity))
           throw new Error("swarm notification budget exhausted");
         swarm.notificationCount += woken;
@@ -791,7 +787,7 @@ export function createSwarmService(deps: {
           ...(goal ? { goal } : {}),
           createdAt: Date.now(),
           notifications: Object.fromEntries(
-            recipients.map((peer) => [peer, { state: wakes(peer) ? ("pending" as const) : ("mailbox" as const) }]),
+            recipients.map((peer) => [peer, { state: wakes ? ("pending" as const) : ("mailbox" as const) }]),
           ),
         });
         swarm.messageRequests[key] = { messageId: id, signature: fingerprint };
