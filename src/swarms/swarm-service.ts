@@ -766,7 +766,13 @@ export function createSwarmService(deps: {
           throw new Error("swarm message budget exhausted");
         if (input.replyTo && !swarm.messages.some((message) => message.id === input.replyTo))
           throw new Error("reply target is not in this swarm");
-        const recipients = input.notify === false ? [] : audience.filter((peer) => peer !== auth.memberId || !!goal);
+        const broadcast = input.audience === "all";
+        const recipients =
+          input.notify === false
+            ? []
+            : audience.filter((peer) =>
+                peer === auth.memberId ? !!goal && !broadcast : !(goal && broadcast && peer === swarm.id),
+              );
         if (goal && (!recipients.length || recipients.includes(swarm.id)))
           throw new Error("goals can only be assigned to workers");
         const wakes = input.notify ?? (!!goal || caller.kind === "human");

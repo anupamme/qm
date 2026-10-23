@@ -37,6 +37,11 @@ test("goals are validated, and any member can give any worker, itself included, 
     f.service.send(f.caller, { requestId: "root", audience: [f.root.id], text: "go", goal }),
     /assigned to workers/,
   );
+  const everyone = await f.service.send(f.caller, { requestId: "all", audience: "all", text: "go", goal });
+  assert.deepEqual(
+    [first!.id, second!.id, f.root.id].map((id) => everyone.notifications[id]?.state),
+    ["pending", "pending", undefined],
+  );
   const peer = await f.workerCaller(first!.id);
   const sibling = await f.service.send(peer, { requestId: "sibling", audience: [second!.id], text: "go", goal });
   const next = { objective: "Pick the next lane" };
@@ -85,7 +90,12 @@ test("a running goal turn takes its worker's queued messages once, under its lea
   await f.service.sweep();
   const earlierRun = (await f.runs.list()).find((run) => run.request.swarm?.messageId === earlier.id)!;
   await f.runs.withdraw(earlierRun.id);
-  const replacement = await send("replace", "take lane B", { goal: { objective: "Survey lane B" } });
+  const replacement = await f.service.send(await f.workerCaller(worker!.id), {
+    requestId: "replace",
+    audience: [worker!.id],
+    text: "take lane B",
+    goal: { objective: "Survey lane B" },
+  });
   const note = await send("note", "lane B starts at the north gate");
   await f.service.sweep();
   const unacknowledged = await send("late", "not delivered yet");

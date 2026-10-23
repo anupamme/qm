@@ -188,8 +188,8 @@ turn runs under the normal goal loop: the worker is prompted to continue until t
 goal's governor approves completion or pauses it, or an optional `token_cap` is
 spent. A turn that carries a goal runs without the swarm `turnMs` deadline; other
 turns keep it. `floor` and `token_cap` take the same keys as the goal tool, and
-neither is required. Goals go to workers, not the root session, and a goal needs
-`notify`. The worker treats the agent that sent the goal as the user for it and
+neither is required. Goals go to workers, not the root session (a goal sent to
+`all` skips the root and the sender), and a goal needs `notify`. The worker treats the agent that sent the goal as the user for it and
 messages that agent when it needs a decision. When a goal is complete, the worker
 decides what comes next: a new goal for itself, a message to whoever must act, or
 other work. Each goal message
