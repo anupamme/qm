@@ -863,6 +863,11 @@ export function createSwarmService(deps: {
       if (!target) return [];
       const swarm = await store.get(target.swarmId);
       if (!swarm) return [];
+      const mine = swarm.messages.filter((message) => {
+        const state = message.notifications[target.recipientId]?.state;
+        return state === "mailbox" || (state === "queued" && !options.mailboxOnly);
+      });
+      if (!mine.length) return [];
       if (session) {
         const rosters = await Promise.all(
           [...new Set([swarm.id, session.id])].map((id) => sessions.participantsOf(id)),
@@ -870,10 +875,6 @@ export function createSwarmService(deps: {
         if (session.scopeId !== swarm.scopeId || rosters.some((roster) => !rosterMatches(roster, swarm.participants)))
           return [];
       }
-      const mine = swarm.messages.filter((message) => {
-        const state = message.notifications[target.recipientId]?.state;
-        return state === "mailbox" || (state === "queued" && !options.mailboxOnly);
-      });
       const unstarted = new Set(
         mine.some((message) => message.notifications[target.recipientId]!.state === "queued")
           ? (await runs.inFlightForThread(input.conversation.threadRef))

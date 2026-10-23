@@ -3277,7 +3277,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               })();
               const appended = await withManagedRosterVersion(() => deps.sessions.append(lease, stored));
               emittedEntries.push(appended);
-              if (mailbox && isObj(appended.payload) && appended.payload.environment !== undefined)
+              if (mailbox && !continuation && isObj(appended.payload) && appended.payload.environment !== undefined)
                 await mailbox.settle();
               if (appended.type === "user" && spine.turnUserEntrySeq === undefined) {
                 spine.turnUserEntrySeq = appended.seq;
