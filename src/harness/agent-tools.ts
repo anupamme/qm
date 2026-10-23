@@ -2528,7 +2528,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       unattendedGrants: Type.Optional(
         Type.Array(Type.Union(UNATTENDED_ADMIN_GRANTS.map((grant) => Type.Literal(grant))), {
           description:
-            "create/patch: read-only admin grants for this cron's fires (org admins only; the cron must live in and deliver to their own DM). Map each admin action the task needs with the admin skill's grant table; actions it omits have no grant. patch replaces the list; [] removes them.",
+            "create/patch: read-only admin grants for this cron's fires (org admins only; the cron must live in and deliver to their own DM); see the admin skill's grant table. patch replaces; [] removes.",
         }),
       ),
       enabled: Type.Optional(Type.Boolean({ description: "patch only: false pauses the cron, true resumes it." })),
