@@ -44,14 +44,10 @@ export class TransientTurnFailure extends Error {
   }
 }
 
-const TRANSIENT_ERROR_CODES: ReadonlySet<string> = new Set<ProviderErrorCode>([
-  "rate_limit",
-  "transient",
-  "model_unavailable",
-]);
+export const TRANSIENT_ERROR_CODES: readonly ProviderErrorCode[] = ["rate_limit", "transient"];
 
 export function isTransientErrorCode(code: string | undefined): boolean {
-  return code !== undefined && TRANSIENT_ERROR_CODES.has(code);
+  return (TRANSIENT_ERROR_CODES as readonly (string | undefined)[]).includes(code);
 }
 
 export function isTransientFailure(err: unknown): boolean {

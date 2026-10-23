@@ -693,6 +693,13 @@ export function createLoopFireService(deps: LoopFireDeps): LoopFireService {
     }
   }
 
+  async function recordFailedFire(loopId: string, failure: unknown): Promise<LoopFireResult> {
+    const transient = isTransientFailure(failure);
+    await deps.loops.recordFireOutcome(loopId, transient ? "transient" : "failed");
+    await applyGovernor(loopId, transient ? { transientFailure: errMessage(failure) } : undefined);
+    return { status: "failed", note: errMessage(failure) };
+  }
+
   async function fire(
     loopId: string,
     fireKey: string,
@@ -746,10 +753,7 @@ export function createLoopFireService(deps: LoopFireDeps): LoopFireService {
         await applyGovernor(loopId);
         return { status: "silent" };
       }
-      const transient = isTransientFailure(failure);
-      await deps.loops.recordFireOutcome(loopId, transient ? "transient" : "failed");
-      await applyGovernor(loopId, transient ? { transientFailure: errMessage(failure) } : undefined);
-      return { status: "failed", note: errMessage(failure) };
+      return recordFailedFire(loopId, failure);
     }
     const maxAttempts = loop.caps?.maxItemAttempts ?? DEFAULT_MAX_ATTEMPTS;
     const grants = await deps.grants.byLoop(loopId);
@@ -833,10 +837,7 @@ export function createLoopFireService(deps: LoopFireDeps): LoopFireService {
       );
     } catch (e) {
       if (e instanceof DuplicateLoopFireError) return { status: "silent", note: "duplicate fire key" };
-      const transient = isTransientFailure(e);
-      await deps.loops.recordFireOutcome(loopId, transient ? "transient" : "failed");
-      await applyGovernor(loopId, transient ? { transientFailure: errMessage(e) } : undefined);
-      return { status: "failed", note: errMessage(e) };
+      return recordFailedFire(loopId, e);
     }
 
     if (!summary.ran) return notRunnable(loop);
