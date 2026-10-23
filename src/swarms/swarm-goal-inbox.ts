@@ -21,6 +21,7 @@ export function createSwarmGoalInbox(deps: {
         const out: Array<{ id: string; text: string }> = [];
         if (held) return out;
         for (const message of await deps.swarms.queuedMessages(deps.input, skippedRuns)) {
+          if (shown.has(message.id)) continue;
           const plain = swarmMessageText(message);
           const replaces = message.goal && message.createdAt > goal.createdAt;
           const text = await deps.screen(replaces ? `${plain}\n\n${goalAssignedNote(message.goal!)}` : plain);

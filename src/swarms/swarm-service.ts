@@ -209,6 +209,11 @@ function matchesDispatch(input: OrchestratorInput, expected: OrchestratorInput):
   );
 }
 
+function turnTarget(session: { threadRef: string; id: string }): Omit<SwarmTurn, "messageId"> {
+  const { rootId, memberId } = threadIdentity(session.threadRef, session.id);
+  return { swarmId: rootId, recipientId: memberId };
+}
+
 function threadIdentity(threadRef: string, sessionId: string): { rootId: string; memberId: string } {
   if (!threadRef.startsWith("swarm:")) return { rootId: sessionId, memberId: sessionId };
   const parts = threadRef.split(":");
@@ -764,9 +769,12 @@ export function createSwarmService(deps: {
           (!recipients.length || recipients.some((peer) => memberById(swarm, peer)?.parentId !== auth.memberId))
         )
           throw new Error("goals can only be assigned to your own workers");
-        if (swarm.notificationCount + recipients.length > (swarm.settings.notifications ?? Infinity))
+        const wakes = (peer: string) =>
+          input.notify ?? (!!goal || caller.kind === "human" || memberById(swarm, peer)?.parentId === auth.memberId);
+        const woken = recipients.filter(wakes).length;
+        if (swarm.notificationCount + woken > (swarm.settings.notifications ?? Infinity))
           throw new Error("swarm notification budget exhausted");
-        swarm.notificationCount += recipients.length;
+        swarm.notificationCount += woken;
         swarm.messages.push({
           id,
           seq: swarm.messages.length + 1,
@@ -779,7 +787,9 @@ export function createSwarmService(deps: {
           ...(input.replyTo ? { replyTo: input.replyTo } : {}),
           ...(goal ? { goal } : {}),
           createdAt: Date.now(),
-          notifications: Object.fromEntries(recipients.map((peer) => [peer, { state: "pending" as const }])),
+          notifications: Object.fromEntries(
+            recipients.map((peer) => [peer, { state: wakes(peer) ? ("pending" as const) : ("mailbox" as const) }]),
+          ),
         });
         swarm.messageRequests[key] = { messageId: id, signature: fingerprint };
       });
@@ -845,8 +855,11 @@ export function createSwarmService(deps: {
       return view(updated.members.find((member) => member.id === target.id)!);
     },
     async queuedMessages(input, skipRuns) {
-      const target = input.swarm;
+      const session = input.swarm ? null : await sessions.getByThread(input.conversation.threadRef);
+      const target = input.swarm ?? (session && turnTarget(session));
       if (!target) return [];
+      const swarm = await store.get(target.swarmId);
+      if (!swarm) return [];
       const unstarted = new Set(
         (await runs.inFlightForThread(input.conversation.threadRef))
           .filter(
@@ -855,20 +868,21 @@ export function createSwarmService(deps: {
           )
           .map((run) => run.id),
       );
-      if (!unstarted.size) return [];
-      const swarm = await store.get(target.swarmId);
-      return (swarm?.messages ?? [])
+      return swarm.messages
         .filter((message) => {
           const notification = message.notifications[target.recipientId];
-          return notification?.state === "queued" && !!notification.runId && unstarted.has(notification.runId);
+          return (
+            notification?.state === "mailbox" ||
+            (notification?.state === "queued" && !!notification.runId && unstarted.has(notification.runId))
+          );
         })
         .sort((a, b) => a.seq - b.seq);
     },
     async handOver(input, messageIds) {
-      const target = input.swarm;
-      if (!target || !input.runId || !input.runLeaseToken || !messageIds.length) return [];
+      if (!input.runId || !input.runLeaseToken || !messageIds.length) return [];
       const session = await sessions.getByThread(input.conversation.threadRef);
       if (!session) return [];
+      const target = input.swarm ?? turnTarget(session);
       const fence: SwarmRunFence = {
         runId: input.runId,
         attempt: input.attempt ?? 1,
@@ -886,7 +900,7 @@ export function createSwarmService(deps: {
           for (const id of messageIds) {
             const message = current.messages.find((item) => item.id === id);
             const notification = message?.notifications[target.recipientId];
-            if (!message || notification?.state !== "queued") continue;
+            if (!message || (notification?.state !== "queued" && notification?.state !== "mailbox")) continue;
             message.notifications[target.recipientId] = { ...notification, state: "handed" };
             handed.push(structuredClone(message));
           }

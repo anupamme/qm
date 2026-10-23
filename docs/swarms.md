@@ -146,18 +146,22 @@ them even if they were not in the intended audience. Root and worker participant
 rosters must remain the original roster; changes fail closed. Current scope and
 identity authorization is rechecked before access and execution.
 
-Notification state is persisted as `pending`, `queued` with a durable `runId`, or
-`failed`. A queued notification means the run was accepted, not that the agent has
+Notification state is persisted as `pending`, `mailbox`, `queued` with a durable
+`runId`, `handed`, or `failed`. A queued notification means the run was accepted, not that the agent has
 finished. Idle recipients wake through the normal durable worker queue. Active
 recipients receive queued unattended turns, not forged human steer signals.
 Notification enqueue uses a stable deduplication key so a crash between enqueue
 and acknowledgment does not enqueue another run. Agent-only turns have no Slack
 delivery target, and the delivery layer also refuses swarm result delivery.
 
-Set `notify:false` for a durable message without a wakeup. Sending to oneself does
-not wake oneself. There are no automatic reply-to-reply notifications: agents
-explicitly decide whether a response warrants another turn. When `notifications`
-is set, every generated turn consumes that budget.
+By default a message wakes only the sender's own workers, and any message from a
+human or carrying a goal wakes its recipients. Every other recipient, such as a
+parent receiving a reply or a peer, gets a `mailbox` notification: no turn runs,
+and the message is handed to the recipient at the start of its next turn, whatever
+starts it, or to a running goal turn like a queued message. Set `notify:true` when
+the recipient must act now, or `notify:false` for a durable message nobody is
+handed. Sending to oneself does not wake oneself. When `notifications` is set,
+every woken recipient consumes that budget.
 
 ### Worker goals
 
@@ -196,7 +200,8 @@ withdraws their queued turns, so they never run again; if the turn fails or is
 stopped first they stay queued and run as their own turns. A goal in one of them replaces the running goal at once,
 so a parent can redirect a busy worker; its work floor counts from when the
 message was sent. A message the screen blocks stays queued, with every message
-after it, and runs as its own turn later.
+after it, and runs as its own turn later; a blocked mailbox message reaches the
+next turn only as a notice that it was withheld.
 
 A worker blocked on another agent can call goal action update `"wait"` with a note
 naming what it waits for. The goal's clock stops and the call returns with the

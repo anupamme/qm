@@ -1,0 +1,101 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createGoalRecord } from "../src/harness/goal.ts";
+import { createSwarmGoalInbox } from "../src/swarms/swarm-goal-inbox.ts";
+import { swarmFixture } from "./support/swarm-fixture.ts";
+
+test("replies and peer messages wait in the recipient's mailbox; parent messages and notify:true still wake", async () => {
+  const f = await swarmFixture();
+  const [first, second] = await f.service.spawn(f.caller, { requestId: "initial", count: 2, text: "work" });
+  await f.service.sweep();
+  const brief = (await f.store.get(f.root.id))!.messages[0]!;
+  const worker = await f.workerCaller(first!.id);
+  const runsFor = async (messageId: string) =>
+    (await f.runs.list()).filter((run) => run.request.swarm?.messageId === messageId);
+  const ack = await f.service.send(worker, {
+    requestId: "ack",
+    audience: [f.root.id],
+    replyTo: brief.id,
+    text: "read",
+  });
+  const peer = await f.service.send(worker, { requestId: "peer", audience: [second!.id], text: "fyi" });
+  const done = await f.service.send(worker, { requestId: "done", audience: [f.root.id], notify: true, text: "done" });
+  const order = await f.service.send(f.caller, { requestId: "order", audience: [first!.id], text: "next lane" });
+  await f.service.sweep();
+  assert.deepEqual(ack.notifications, { [f.root.id]: { state: "mailbox" } });
+  assert.deepEqual(peer.notifications, { [second!.id]: { state: "mailbox" } });
+  assert.deepEqual(await runsFor(ack.id), []);
+  assert.deepEqual(await runsFor(peer.id), []);
+  assert.equal((await runsFor(done.id)).length, 1);
+  assert.equal((await runsFor(order.id)).length, 1);
+  assert.equal((await f.store.get(f.root.id))!.pending, false);
+});
+
+test("a mailbox message is handed to the recipient's next turn once, even a turn no swarm message started", async () => {
+  const f = await swarmFixture();
+  const [member] = await f.service.spawn(f.caller, { requestId: "initial", text: "work" });
+  await f.service.sweep();
+  const worker = await f.workerCaller(member!.id);
+  const ack = await f.service.send(worker, { requestId: "ack", audience: [f.root.id], text: "read the brief" });
+  if (f.caller.kind === "agent")
+    await f.runs.complete(f.caller.claims.runId!, f.caller.claims.runLeaseToken!, { status: "ok" });
+  const human = (await f.runs.enqueue({ sessionId: f.root.threadRef, request: { ...f.template, text: "status?" } }))
+    .run;
+  const claimed = (await f.runs.claimById(human.id, "worker", 60_000))!;
+  const input = {
+    ...claimed.request,
+    runId: claimed.id,
+    runLeaseToken: claimed.leaseToken!,
+    attempt: claimed.attempts,
+  };
+  assert.deepEqual(
+    (await f.service.queuedMessages(input)).map((message) => message.id),
+    [ack.id],
+  );
+  assert.deepEqual(
+    (await f.service.handOver(input, [ack.id])).map((message) => message.id),
+    [ack.id],
+  );
+  assert.deepEqual(await f.service.queuedMessages(input), []);
+  assert.deepEqual(await f.service.handOver(input, [ack.id]), []);
+  await f.service.sweep();
+  assert.ok(!(await f.runs.list()).some((run) => run.request.swarm?.messageId === ack.id));
+});
+
+test("a running goal turn shows a mailbox message once and hands it over when it settles", async () => {
+  const f = await swarmFixture();
+  const [busy, peer] = await f.service.spawn(f.caller, {
+    requestId: "initial",
+    count: 2,
+    text: "work",
+    goal: { objective: "Survey the lane" },
+  });
+  await f.service.sweep();
+  const note = await f.service.send(await f.workerCaller(peer!.id), {
+    requestId: "note",
+    audience: [busy!.id],
+    text: "north gate is closed",
+  });
+  const run = (await f.runs.list()).find((item) => item.request.swarm?.recipientId === busy!.id)!;
+  const claimed = (await f.runs.claimById(run.id, "worker", 60_000))!;
+  const input = {
+    ...claimed.request,
+    runId: claimed.id,
+    runLeaseToken: claimed.leaseToken!,
+    attempt: claimed.attempts,
+  };
+  const { inbox, settle } = createSwarmGoalInbox({
+    swarms: f.service,
+    input,
+    screen: async (text) => text,
+    saveGoal: async () => {},
+  });
+  const goal = createGoalRecord({ objective: "Survey the lane", now: 0 });
+  const [shown] = await inbox.receive(goal);
+  assert.match(shown!.text, /north gate is closed/);
+  await inbox.acknowledge([note.id], goal);
+  assert.deepEqual(await inbox.receive(goal), []);
+  await settle();
+  const message = (await f.store.get(f.root.id))!.messages.find((item) => item.id === note.id)!;
+  assert.equal(message.notifications[busy!.id]?.state, "handed");
+});
