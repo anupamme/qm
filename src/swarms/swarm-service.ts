@@ -859,14 +859,17 @@ export function createSwarmService(deps: {
       const target = input.swarm ?? (session && turnTarget(session));
       if (!target) return [];
       const swarm = await store.get(target.swarmId);
-      if (!swarm) return [];
+      const states = new Set(swarm?.messages.map((message) => message.notifications[target.recipientId]?.state));
+      if (!swarm || (!states.has("mailbox") && !states.has("queued"))) return [];
       const unstarted = new Set(
-        (await runs.inFlightForThread(input.conversation.threadRef))
-          .filter(
-            (run) =>
-              run.status === "pending" && run.attempts === 0 && run.turnUserSeq === null && !skipRuns?.has(run.id),
-          )
-          .map((run) => run.id),
+        states.has("queued")
+          ? (await runs.inFlightForThread(input.conversation.threadRef))
+              .filter(
+                (run) =>
+                  run.status === "pending" && run.attempts === 0 && run.turnUserSeq === null && !skipRuns?.has(run.id),
+              )
+              .map((run) => run.id)
+          : [],
       );
       return swarm.messages
         .filter((message) => {

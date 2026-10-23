@@ -29,7 +29,7 @@ export function createSwarmGoalInbox(deps: {
           if (runId) skippedRuns.add(runId);
           if (text === null) {
             console.error(
-              `[swarm] goal inbox held message=${message.id} and everything after it: the security screen blocked it mid-turn; it will run as its own turn`,
+              `[swarm] goal inbox held message=${message.id} and everything after it: the security screen blocked it mid-turn; it is left for a later turn`,
             );
             held = true;
             break;

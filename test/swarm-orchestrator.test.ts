@@ -771,12 +771,15 @@ test("a worker's reply waits in the root's mailbox and reaches the root's next h
     const environments: string[] = [];
     exerciseTurn = async (turn) => {
       environments.push(turn.environment ?? "");
+      if (environments.length === 1) return { stopped: true };
     };
-    const status = await human("Status?");
+    await human("Status?");
+    const status = await human("Status now?");
     assert.equal(status.status, "ok", JSON.stringify(status));
     assert.equal((await human("Anything else?")).status, "ok");
-    assert.match(environments[0]!, /mailbox[\s\S]*brief read/);
-    assert.doesNotMatch(environments[1]!, /brief read/);
+    assert.match(environments[0]!, /brief read/);
+    assert.match(environments[1]!, /mailbox[\s\S]*brief read/, "a turn that stopped before recording it keeps it");
+    assert.doesNotMatch(environments[2]!, /brief read/);
   } finally {
     exerciseTurn = undefined;
     await built.runtime.stop();

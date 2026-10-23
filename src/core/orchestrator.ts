@@ -2964,19 +2964,14 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             : [];
         });
         turnContextBlocks["Skills"] = skillsIndex(nativeSkills, [scopeId, resolution.orgScopeId], usedSkills);
-        const mailbox: string[] = [];
-        if (deps.swarms && input.runId && !partial && !input.approval) {
-          const recipientId = swarmBinding?.member.id ?? session.id;
-          const waiting = (
-            await deps.swarms.queuedMessages(input).catch(swallowAs("swarm: read the mailbox", []))
-          ).filter((message) => message.notifications[recipientId]?.state === "mailbox");
-          const handed = await deps.swarms
-            .handOver(
-              input,
-              waiting.map((message) => message.id),
-            )
-            .catch(swallowAs("swarm: mailbox handoff", []));
-          for (const message of handed) {
+        const mailbox =
+          deps.swarms && input.runId && !partial && !input.approval
+            ? (await deps.swarms.queuedMessages(input).catch(swallowAs("swarm: read the mailbox", []))).filter(
+                (message) => message.notifications[swarmBinding?.member.id ?? session.id]?.state === "mailbox",
+              )
+            : [];
+        const mailboxTexts = await Promise.all(
+          mailbox.map(async (message) => {
             const text = swarmMessageText(message);
             const screen = await orchestrator.screenSecuritySteer({
               payload: text,
@@ -2986,12 +2981,10 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               verifiedSwarm: true,
             });
             if (screen === "block")
-              mailbox.push(
-                `[Swarm message ${message.id} from agent ${message.senderId} was withheld by the security screen.]`,
-              );
-            else mailbox.push(screen === "unscreened" ? `${unscreenedNotice("swarm message")}\n${text}` : text);
-          }
-        }
+              return `[Swarm message ${message.id} from agent ${message.senderId} was withheld by the security screen.]`;
+            return screen === "unscreened" ? `${unscreenedNotice("swarm message")}\n${text}` : text;
+          }),
+        );
         const turnEnvironmentContents = [
           manifest,
           principalDelivered,
@@ -2999,7 +2992,9 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           unscreenedNote,
           input.conversationHeader?.trim(),
           volatileContext,
-          mailbox.length ? `Swarm messages left in your mailbox since your last turn:\n\n${mailbox.join("\n\n")}` : "",
+          mailboxTexts.length
+            ? `Swarm messages left in your mailbox since your last turn:\n\n${mailboxTexts.join("\n\n")}`
+            : "",
         ]
           .filter((s) => s && s.trim())
           .join("\n\n");
@@ -3291,6 +3286,13 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               })();
               const appended = await withManagedRosterVersion(() => deps.sessions.append(lease, stored));
               emittedEntries.push(appended);
+              if (mailbox.length && isObj(appended.payload) && appended.payload.environment !== undefined)
+                await deps.swarms
+                  ?.handOver(
+                    input,
+                    mailbox.splice(0).map((message) => message.id),
+                  )
+                  .catch(swallowAs("swarm: mailbox handoff", []));
               if (appended.type === "user" && spine.turnUserEntrySeq === undefined) {
                 spine.turnUserEntrySeq = appended.seq;
                 if (input.runId && deps.runs)
