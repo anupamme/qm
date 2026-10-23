@@ -42,12 +42,10 @@ Limits the API enforces (don't offer what it will refuse):
   Open reads can expose private data to everyone in the conversation: retrieve and
   report only what the request needs. Two other exceptions: org-targeted
   memory/config reads work anywhere (org content is ambient to every conversation), and
-  a cron can carry **unattended read grants** (`unattendedGrants` on the cron tool or
-  the cron: `admin.sessions.read`, `admin.audit.read`, `admin.egress.read`,
-  `admin.files.read`, `admin.spend.read`, `admin.crons.read`) — set only on a live turn
-  by the cron's owner, who must be a current org admin, on a cron that lives in and
-  delivers only to their own DM (never a channel, group or another person). When an
-  admin asks for a cron that reads admin data, set the narrowest grants on create.
+  a cron can carry **unattended read grants** (`unattendedGrants` on the cron tool;
+  see [Scheduling admin-reading work](#scheduling-admin-reading-work)) — set only on a
+  live turn by the cron's owner, who must be a current org admin, on a cron that lives
+  in and delivers only to their own DM (never a channel, group or another person).
   Each grant opens exactly its own GET
   routes to that cron's autonomous fires, audited as the owner
   (re-checked live — revoking their admin grant closes it). Other mutations work
@@ -235,6 +233,41 @@ grant change — don't offer it.
 Not available through you: who governs the org changes only in the admin dashboard,
 where the admin acts directly. If asked, point them there — don't try the API
 (`POST/DELETE /v1/admin/grants` refuses agent tokens).
+
+## Scheduling admin-reading work
+
+Cron and webhook fires are autonomous, so the admin plane refuses them unless the
+cron carries the grant each route needs. When an admin asks for scheduled work that
+reads admin data, settle the grants at creation, not after the first fire fails:
+
+1. Work out which admin routes the task will call.
+2. Map each route to its grant with the table below. Every route the table omits has
+   no unattended grant.
+3. Create the cron from a live turn in the admin's own DM, delivering to that DM, with
+   exactly those grants in `unattendedGrants`.
+4. If a needed route has no grant, or the cron can't carry grants (not the owner's own
+   DM, not a live turn by a current org admin, or delivery to a channel, group or
+   another person), tell the admin plainly before or at creation which part won't work
+   unattended. Don't create a cron that will fail on its first fire without saying so.
+5. After creating it, read the cron back (`get`) and confirm the grants are listed.
+
+The table mirrors the `admin.unattended` annotations on the routes in
+`src/api/routes/admin.ts`; a test keeps the two in step.
+
+| Route                          | Grant                 |
+| ------------------------------ | --------------------- |
+| `GET /v1/admin/scopes`         | `admin.sessions.read` |
+| `GET /v1/admin/spend`          | `admin.spend.read`    |
+| `GET /v1/admin/egress`         | `admin.egress.read`   |
+| `GET /v1/admin/sessions`       | `admin.sessions.read` |
+| `GET /v1/admin/sessions/:id`   | `admin.sessions.read` |
+| `GET /v1/admin/runs`           | `admin.sessions.read` |
+| `GET /v1/admin/files/read`     | `admin.files.read`    |
+| `GET /v1/admin/files/download` | `admin.files.read`    |
+| `GET /v1/admin/files`          | `admin.files.read`    |
+| `GET /v1/admin/errors`         | `admin.sessions.read` |
+| `GET /v1/admin/audit`          | `admin.audit.read`    |
+| `GET /v1/admin/crons`          | `admin.crons.read`    |
 
 ## Failure modes
 

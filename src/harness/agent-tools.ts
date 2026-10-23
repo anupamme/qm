@@ -2388,7 +2388,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       "plus, where they share Open with it, their own keychain. Everyone in the conversation " +
       "can see it; only its owner can change it unless they share write access (action=share, permission=write). " +
       "If the owner leaves the conversation, the cron is deleted.\n" +
-      "A cron that reads the admin API needs the narrowest `unattendedGrants` on create; if refused, relay why.\n" +
+      "A cron that reads the admin API needs `unattendedGrants` set on create; follow the admin skill's Scheduling admin-reading work.\n" +
       "action=list pages through your crons (and ones visible through shared scopes), 25 per page — enabled first, " +
       "newest first, long task text trimmed; when there's more, a footer line names the offset for the next page. " +
       "action=get inspects one in full; " +
