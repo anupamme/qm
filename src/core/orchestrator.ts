@@ -22,8 +22,7 @@ import { recoveredRuntime } from "../harness/runtime-recovery.ts";
 import { createCanWriteScope, rosterAdmits, withLiveTurnMembership } from "../resolution/scope-membership.ts";
 import { goalView } from "../runs/turn-stream.ts";
 import { assignedGoal, type GoalRecord, openGoal } from "../harness/goal.ts";
-import { createSwarmGoalInbox } from "../swarms/swarm-goal-inbox.ts";
-import { swarmMessageText } from "../swarms/swarm-service.ts";
+import { createSwarmGoalInbox, openSwarmMailbox } from "../swarms/swarm-goal-inbox.ts";
 import type {
   CommandApprovalGrant,
   DeliveryProvenance,
@@ -2964,27 +2963,21 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             : [];
         });
         turnContextBlocks["Skills"] = skillsIndex(nativeSkills, [scopeId, resolution.orgScopeId], usedSkills);
+        const screenSwarmMessage = async (text: string): Promise<string | null> => {
+          const screen = await orchestrator.screenSecuritySteer({
+            payload: text,
+            actor,
+            conversation,
+            sessionId: session.id,
+            verifiedSwarm: true,
+          });
+          if (screen === "block") return null;
+          return screen === "unscreened" ? `${unscreenedNotice("swarm message")}\n${text}` : text;
+        };
         const mailbox =
           deps.swarms && input.runId && !partial && !input.approval
-            ? (await deps.swarms.queuedMessages(input).catch(swallowAs("swarm: read the mailbox", []))).filter(
-                (message) => message.notifications[swarmBinding?.member.id ?? session.id]?.state === "mailbox",
-              )
-            : [];
-        const mailboxTexts = await Promise.all(
-          mailbox.map(async (message) => {
-            const text = swarmMessageText(message);
-            const screen = await orchestrator.screenSecuritySteer({
-              payload: text,
-              actor,
-              conversation,
-              sessionId: session.id,
-              verifiedSwarm: true,
-            });
-            if (screen === "block")
-              return `[Swarm message ${message.id} from agent ${message.senderId} was withheld by the security screen.]`;
-            return screen === "unscreened" ? `${unscreenedNotice("swarm message")}\n${text}` : text;
-          }),
-        );
+            ? await openSwarmMailbox({ swarms: deps.swarms, input, screen: screenSwarmMessage })
+            : undefined;
         const turnEnvironmentContents = [
           manifest,
           principalDelivered,
@@ -2992,9 +2985,6 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           unscreenedNote,
           input.conversationHeader?.trim(),
           volatileContext,
-          mailboxTexts.length
-            ? `Swarm messages left in your mailbox since your last turn:\n\n${mailboxTexts.join("\n\n")}`
-            : "",
         ]
           .filter((s) => s && s.trim())
           .join("\n\n");
@@ -3235,6 +3225,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           const turnEnvironment = environmentNote(
             [
               turnEnvironmentContents,
+              continuation ? "" : mailbox?.text,
               snapshot.text,
               recall.text ? `${memoryHeading}${recall.text}` : "",
               inboundIssuesNote(inboundIssues),
@@ -3286,13 +3277,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               })();
               const appended = await withManagedRosterVersion(() => deps.sessions.append(lease, stored));
               emittedEntries.push(appended);
-              if (mailbox.length && isObj(appended.payload) && appended.payload.environment !== undefined)
-                await deps.swarms
-                  ?.handOver(
-                    input,
-                    mailbox.splice(0).map((message) => message.id),
-                  )
-                  .catch(swallowAs("swarm: mailbox handoff", []));
+              if (mailbox && isObj(appended.payload) && appended.payload.environment !== undefined)
+                await mailbox.settle();
               if (appended.type === "user" && spine.turnUserEntrySeq === undefined) {
                 spine.turnUserEntrySeq = appended.seq;
                 if (input.runId && deps.runs)
@@ -3335,17 +3321,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               ? createSwarmGoalInbox({
                   swarms: deps.swarms,
                   input,
-                  screen: async (text) => {
-                    const screen = await orchestrator.screenSecuritySteer({
-                      payload: text,
-                      actor,
-                      conversation,
-                      sessionId: session.id,
-                      verifiedSwarm: true,
-                    });
-                    if (screen === "block") return null;
-                    return screen === "unscreened" ? `${unscreenedNotice("mid-turn message")}\n${text}` : text;
-                  },
+                  screen: screenSwarmMessage,
                   saveGoal,
                 })
               : undefined;

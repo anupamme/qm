@@ -85,7 +85,10 @@ export interface SwarmService {
   control(caller: SwarmCaller, input: { memberId: string; state: SwarmControlState }): Promise<SwarmMember>;
   enabledFor(actorId: string): Promise<boolean>;
   binding(input: OrchestratorInput): Promise<{ sandboxId?: string; rootSessionId: string; member: SwarmMember } | null>;
-  queuedMessages(input: OrchestratorInput, skipRuns?: ReadonlySet<string>): Promise<SwarmMessage[]>;
+  queuedMessages(
+    input: OrchestratorInput,
+    options?: { skipRuns?: ReadonlySet<string>; mailboxOnly?: boolean },
+  ): Promise<SwarmMessage[]>;
   handOver(input: OrchestratorInput, messageIds: readonly string[]): Promise<SwarmMessage[]>;
 }
 
@@ -854,30 +857,40 @@ export function createSwarmService(deps: {
       }
       return view(updated.members.find((member) => member.id === target.id)!);
     },
-    async queuedMessages(input, skipRuns) {
+    async queuedMessages(input, options = {}) {
       const session = input.swarm ? null : await sessions.getByThread(input.conversation.threadRef);
       const target = input.swarm ?? (session && turnTarget(session));
       if (!target) return [];
       const swarm = await store.get(target.swarmId);
-      const states = new Set(swarm?.messages.map((message) => message.notifications[target.recipientId]?.state));
-      if (!swarm || (!states.has("mailbox") && !states.has("queued"))) return [];
+      if (!swarm) return [];
+      if (session) {
+        const rosters = await Promise.all(
+          [...new Set([swarm.id, session.id])].map((id) => sessions.participantsOf(id)),
+        );
+        if (session.scopeId !== swarm.scopeId || rosters.some((roster) => !rosterMatches(roster, swarm.participants)))
+          return [];
+      }
+      const mine = swarm.messages.filter((message) => {
+        const state = message.notifications[target.recipientId]?.state;
+        return state === "mailbox" || (state === "queued" && !options.mailboxOnly);
+      });
       const unstarted = new Set(
-        states.has("queued")
+        mine.some((message) => message.notifications[target.recipientId]!.state === "queued")
           ? (await runs.inFlightForThread(input.conversation.threadRef))
               .filter(
                 (run) =>
-                  run.status === "pending" && run.attempts === 0 && run.turnUserSeq === null && !skipRuns?.has(run.id),
+                  run.status === "pending" &&
+                  run.attempts === 0 &&
+                  run.turnUserSeq === null &&
+                  !options.skipRuns?.has(run.id),
               )
               .map((run) => run.id)
           : [],
       );
-      return swarm.messages
+      return mine
         .filter((message) => {
-          const notification = message.notifications[target.recipientId];
-          return (
-            notification?.state === "mailbox" ||
-            (notification?.state === "queued" && !!notification.runId && unstarted.has(notification.runId))
-          );
+          const notification = message.notifications[target.recipientId]!;
+          return notification.state === "mailbox" || unstarted.has(notification.runId!);
         })
         .sort((a, b) => a.seq - b.seq);
     },

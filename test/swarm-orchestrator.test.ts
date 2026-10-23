@@ -778,7 +778,7 @@ test("a worker's reply waits in the root's mailbox and reaches the root's next h
     assert.equal(status.status, "ok", JSON.stringify(status));
     assert.equal((await human("Anything else?")).status, "ok");
     assert.match(environments[0]!, /brief read/);
-    assert.match(environments[1]!, /mailbox[\s\S]*brief read/, "a turn that stopped before recording it keeps it");
+    assert.match(environments[1]!, /brief read/, "a turn that stopped before recording it keeps it");
     assert.doesNotMatch(environments[2]!, /brief read/);
   } finally {
     exerciseTurn = undefined;

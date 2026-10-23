@@ -158,10 +158,13 @@ By default a message wakes only the sender's own workers, and any message from a
 human or carrying a goal wakes its recipients. Every other recipient, such as a
 parent receiving a reply or a peer, gets a `mailbox` notification: no turn runs,
 and the message is handed to the recipient at the start of its next turn, whatever
-starts it, or to a running goal turn like a queued message. Set `notify:true` when
+starts it, or to a running goal turn like a queued message. They count as delivered
+once the turn's opening entry that carries them is saved, even if that turn later
+stops or fails, because they are already in its transcript. Set `notify:true` when
 the recipient must act now, or `notify:false` for a durable message nobody is
-handed. Sending to oneself does not wake oneself. When `notifications` is set,
-every woken recipient consumes that budget.
+handed. Turns outside swarm delivery see their mailbox only while the swarm's
+participant rosters are unchanged. Sending to oneself does not wake oneself. When
+`notifications` is set, every woken recipient consumes that budget.
 
 ### Worker goals
 

@@ -20,10 +20,17 @@ test("replies and peer messages wait in the recipient's mailbox; parent messages
   });
   const peer = await f.service.send(worker, { requestId: "peer", audience: [second!.id], text: "fyi" });
   const done = await f.service.send(worker, { requestId: "done", audience: [f.root.id], notify: true, text: "done" });
+  const quiet = await f.service.send(f.caller, {
+    requestId: "quiet",
+    audience: [first!.id],
+    notify: false,
+    text: "for the record",
+  });
   const order = await f.service.send(f.caller, { requestId: "order", audience: [first!.id], text: "next lane" });
   await f.service.sweep();
   assert.deepEqual(ack.notifications, { [f.root.id]: { state: "mailbox" } });
   assert.deepEqual(peer.notifications, { [second!.id]: { state: "mailbox" } });
+  assert.deepEqual(quiet.notifications, {});
   assert.deepEqual(await runsFor(ack.id), []);
   assert.deepEqual(await runsFor(peer.id), []);
   assert.equal((await runsFor(done.id)).length, 1);
@@ -31,35 +38,22 @@ test("replies and peer messages wait in the recipient's mailbox; parent messages
   assert.equal((await f.store.get(f.root.id))!.pending, false);
 });
 
-test("a mailbox message is handed to the recipient's next turn once, even a turn no swarm message started", async () => {
+test("a root turn outside swarm delivery sees its mailbox only while the swarm roster is unchanged", async () => {
   const f = await swarmFixture();
   const [member] = await f.service.spawn(f.caller, { requestId: "initial", text: "work" });
   await f.service.sweep();
-  const worker = await f.workerCaller(member!.id);
-  const ack = await f.service.send(worker, { requestId: "ack", audience: [f.root.id], text: "read the brief" });
-  if (f.caller.kind === "agent")
-    await f.runs.complete(f.caller.claims.runId!, f.caller.claims.runLeaseToken!, { status: "ok" });
-  const human = (await f.runs.enqueue({ sessionId: f.root.threadRef, request: { ...f.template, text: "status?" } }))
-    .run;
-  const claimed = (await f.runs.claimById(human.id, "worker", 60_000))!;
-  const input = {
-    ...claimed.request,
-    runId: claimed.id,
-    runLeaseToken: claimed.leaseToken!,
-    attempt: claimed.attempts,
-  };
+  const ack = await f.service.send(await f.workerCaller(member!.id), {
+    requestId: "ack",
+    audience: [f.root.id],
+    text: "read the brief",
+  });
+  const human = { ...f.template, text: "status?" };
   assert.deepEqual(
-    (await f.service.queuedMessages(input)).map((message) => message.id),
+    (await f.service.queuedMessages(human)).map((message) => message.id),
     [ack.id],
   );
-  assert.deepEqual(
-    (await f.service.handOver(input, [ack.id])).map((message) => message.id),
-    [ack.id],
-  );
-  assert.deepEqual(await f.service.queuedMessages(input), []);
-  assert.deepEqual(await f.service.handOver(input, [ack.id]), []);
-  await f.service.sweep();
-  assert.ok(!(await f.runs.list()).some((run) => run.request.swarm?.messageId === ack.id));
+  await f.sessions.addParticipant(f.root.id, "mallory");
+  assert.deepEqual(await f.service.queuedMessages(human), []);
 });
 
 test("a running goal turn shows a mailbox message once and hands it over when it settles", async () => {
